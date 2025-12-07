@@ -755,7 +755,6 @@ NGINXCONF
             exit 1
         fi
     fi
-    fi
     print_success "Dependencies updated"
     
     # Download dependencies
