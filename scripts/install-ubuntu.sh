@@ -109,11 +109,26 @@ interactive_setup() {
     echo ""
     
     if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
+        # Check if we can read from terminal (important for curl | bash)
+        if [[ -t 0 ]]; then
+            # Running interactively - stdin is terminal
+            INPUT_SOURCE="/dev/stdin"
+        elif [[ -e /dev/tty ]]; then
+            # Running via pipe (curl | bash) - use /dev/tty directly
+            INPUT_SOURCE="/dev/tty"
+        else
+            # No terminal available - skip interactive
+            print_warning "No terminal available for input - skipping MaxMind key prompt"
+            print_warning "Use --maxmind-key option or configure later"
+            MAXMIND_LICENSE_KEY=""
+            return
+        fi
+        
         while true; do
             echo -ne "${BLUE}Enter MaxMind License Key (or 'skip' to configure later): ${NC}"
-            read -r MAXMIND_LICENSE_KEY
+            read -r MAXMIND_LICENSE_KEY < "$INPUT_SOURCE"
             
-            if [[ "$MAXMIND_LICENSE_KEY" == "skip" ]]; then
+            if [[ "$MAXMIND_LICENSE_KEY" == "skip" || -z "$MAXMIND_LICENSE_KEY" ]]; then
                 MAXMIND_LICENSE_KEY=""
                 print_warning "MaxMind key skipped - GeoIP features will be limited"
                 print_warning "You can add it later in: ${INSTALL_DIR}/configs/GeoIP.conf"
