@@ -1002,7 +1002,7 @@ F2BCONF
 # BEON-IPQuality Automated Tasks
 
 # Update threat feeds every 4 hours
-0 */4 * * * ${USER} ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml >> ${LOG_DIR}/ingestor.log 2>&1
+0 */4 * * * ${USER} ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml -feeds ${INSTALL_DIR}/configs/feeds.yaml >> ${LOG_DIR}/ingestor.log 2>&1
 
 # Recompile MMDB every 4 hours (15 min after ingestor)
 15 */4 * * * ${USER} ${INSTALL_DIR}/bin/compiler -config ${INSTALL_DIR}/configs/config.yaml >> ${LOG_DIR}/compiler.log 2>&1
@@ -1047,9 +1047,9 @@ LOGROTATE
     save_credentials
     create_env_file
     
-    # Configure GeoIP.conf if MaxMind key provided
+    # Configure GeoIP.conf
+    print_status "Configuring MaxMind GeoIP..."
     if [[ -n "$MAXMIND_LICENSE_KEY" ]]; then
-        print_status "Configuring MaxMind GeoIP..."
         cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
 # GeoIP.conf - MaxMind Configuration
 # Auto-generated during installation
@@ -1064,6 +1064,23 @@ GEOIPCONF
         chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
         chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
         print_success "MaxMind GeoIP configured"
+    else
+        # Create placeholder GeoIP.conf
+        cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
+# GeoIP.conf - MaxMind Configuration
+# IMPORTANT: Add your MaxMind credentials to enable GeoIP updates
+# Get free license key at: https://www.maxmind.com/en/geolite2/signup
+
+AccountID 0
+LicenseKey YOUR_LICENSE_KEY_HERE
+EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
+
+DatabaseDirectory ${DATA_DIR}/mmdb
+LockFile ${DATA_DIR}/mmdb/.geoipupdate.lock
+GEOIPCONF
+        chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
+        chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
+        print_warning "GeoIP.conf created with placeholder - add your MaxMind key later"
     fi
     
     #===========================================================================
@@ -1103,7 +1120,7 @@ GEOIPCONF
     fi
     echo ""
     echo -e "  ${GREEN}2.${NC} Run initial data ingestion:"
-    echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml${NC}"
+    echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml -feeds ${INSTALL_DIR}/configs/feeds.yaml${NC}"
     echo ""
     echo -e "  ${GREEN}3.${NC} Compile MMDB database:"
     echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/compiler -config ${INSTALL_DIR}/configs/config.yaml${NC}"
