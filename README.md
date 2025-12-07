@@ -152,6 +152,147 @@ sudo -u beon /opt/beon-ipquality/bin/ingestor \
   -feeds /opt/beon-ipquality/configs/feeds.yaml
 ```
 
+### 🔧 Troubleshooting
+
+#### Error: `'api.rate_limit' expected type 'int'`
+
+This happens when config.yaml format doesn't match the Go struct. Fix by updating config:
+
+```bash
+# Backup old config
+sudo cp /opt/beon-ipquality/configs/config.yaml /opt/beon-ipquality/configs/config.yaml.bak
+
+# Get your DB password
+DB_PASS=$(grep POSTGRES_PASSWORD /opt/beon-ipquality/credentials.txt | cut -d'=' -f2)
+
+# Create correct config format
+sudo tee /opt/beon-ipquality/configs/config.yaml << EOF
+server:
+  host: "127.0.0.1"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+environment: production
+
+logging:
+  level: "info"
+  format: "json"
+  output: "file"
+  file_path: "/var/log/beon-ipquality/api.log"
+
+database:
+  postgres:
+    host: "localhost"
+    port: 5432
+    database: "ipquality"
+    username: "beon"
+    password: "$DB_PASS"
+    ssl_mode: "disable"
+    max_connections: 50
+    min_connections: 10
+    max_conn_lifetime: 1h
+    max_conn_idle_time: 30m
+
+redis:
+  enabled: true
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+mmdb:
+  reputation_path: "/var/lib/beon-ipquality/mmdb/reputation.mmdb"
+  geolite2_city_path: "/var/lib/beon-ipquality/mmdb/GeoLite2-City.mmdb"
+  geolite2_asn_path: "/var/lib/beon-ipquality/mmdb/GeoLite2-ASN.mmdb"
+  output_path: "/var/lib/beon-ipquality/mmdb/reputation.mmdb"
+  reload_interval: 1h
+
+scoring:
+  decay_lambda: 0.01
+  max_score: 100
+  risk_threshold: 50
+
+ingestor:
+  batch_size: 1000
+  workers: 4
+
+api:
+  auth_enabled: true
+  rate_limit: 1000
+  rate_limit_window: 60s
+  batch_enabled: true
+  batch_max_size: 100
+
+judge:
+  enabled: false
+  port: 8081
+
+metrics:
+  enabled: true
+
+health:
+  enabled: true
+EOF
+
+# Set permissions
+sudo chown beon:beon /opt/beon-ipquality/configs/config.yaml
+sudo chmod 640 /opt/beon-ipquality/configs/config.yaml
+
+# Test again
+sudo -u beon /opt/beon-ipquality/bin/ingestor \
+  -config /opt/beon-ipquality/configs/config.yaml \
+  -feeds /opt/beon-ipquality/configs/feeds.yaml
+```
+
+#### Error: `no PostgreSQL user name specified`
+
+Database credentials not configured correctly. Check config has nested `database.postgres`:
+
+```yaml
+database:
+  postgres:           # ← Must be nested!
+    host: "localhost"
+    username: "beon"  # ← Not 'user'
+    password: "xxx"
+    database: "ipquality"  # ← Not 'name'
+```
+
+#### Error: `permission denied ./configs/feeds.yaml`
+
+Using relative path instead of absolute. Always use full path:
+
+```bash
+# Wrong ❌
+sudo -u beon /opt/beon-ipquality/bin/ingestor -config ./configs/config.yaml
+
+# Correct ✅
+sudo -u beon /opt/beon-ipquality/bin/ingestor \
+  -config /opt/beon-ipquality/configs/config.yaml \
+  -feeds /opt/beon-ipquality/configs/feeds.yaml
+```
+
+#### Clean Reinstall
+
+If you need to start fresh:
+
+```bash
+# Stop and remove everything
+sudo systemctl stop beon-api beon-judge 2>/dev/null
+sudo rm -f /etc/systemd/system/beon-*.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/beon-ipquality /var/lib/beon-ipquality /var/log/beon-ipquality
+sudo userdel -r beon 2>/dev/null
+sudo rm -f /etc/cron.d/beon-ipquality
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS ipquality;" 2>/dev/null
+sudo -u postgres psql -c "DROP USER IF EXISTS beon;" 2>/dev/null
+
+# Fresh install
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
+```
+
 ### View Your Credentials
 
 ```bash
