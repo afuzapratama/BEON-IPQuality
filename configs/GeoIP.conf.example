@@ -14,7 +14,9 @@ LicenseKey YOUR_LICENSE_KEY
 EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
 
 # DatabaseDirectory - where to store the downloaded databases
-DatabaseDirectory /mnt/DataDrive/project-beon/BEON-IPQuality/data/mmdb
+# For development: ./data/mmdb (relative to project root)
+# For production: /opt/beon-ipquality/data/mmdb or /var/lib/beon-ipquality/mmdb
+DatabaseDirectory /opt/beon-ipquality/data/mmdb
 
 # Host - MaxMind update server (optional, defaults to updates.maxmind.com)
 # Host updates.maxmind.com

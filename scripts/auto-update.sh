@@ -15,7 +15,7 @@
 set -e
 
 # Configuration
-BEON_DIR="${BEON_DIR:-/mnt/DataDrive/project-beon/BEON-IPQuality}"
+BEON_DIR="${BEON_DIR:-/opt/beon-ipquality}"
 CONFIG_PATH="${CONFIG_PATH:-$BEON_DIR/configs/config.yaml}"
 FEEDS_PATH="${FEEDS_PATH:-$BEON_DIR/configs/feeds.yaml}"
 LOG_FILE="${LOG_FILE:-/var/log/beon-update.log}"
