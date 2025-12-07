@@ -722,17 +722,39 @@ NGINXCONF
     export GO111MODULE=on
     # IMPORTANT: Prevent Go from trying to download different toolchain version
     export GOTOOLCHAIN=local
+    # IMPORTANT: Bypass Go proxy (some servers block proxy.golang.org)
+    # Try proxy first, then direct download from source
+    export GOPROXY="https://proxy.golang.org,direct"
+    # If proxy still fails, uncomment this to go direct only:
+    # export GOPROXY=direct
+    export GONOSUMDB="*"
+    export GOPRIVATE="*"
     
     print_status "Go environment:"
     print_status "  GOTOOLCHAIN=local (prevent auto-upgrade)"
+    print_status "  GOPROXY=$GOPROXY"
     print_status "  $(go version)"
+    
+    # Test if proxy.golang.org is accessible
+    print_status "Testing Go proxy connectivity..."
+    if ! curl -4 -s --connect-timeout 5 "https://proxy.golang.org" > /dev/null 2>&1; then
+        print_warning "proxy.golang.org not accessible, switching to direct mode"
+        export GOPROXY=direct
+        export GONOSUMDB="*"
+    fi
     
     # Run go mod tidy first to update dependencies
     print_status "Updating Go dependencies..."
     if ! go mod tidy 2>&1; then
-        print_error "Failed to run go mod tidy"
-        print_error "Check the error above for details"
-        exit 1
+        print_warning "go mod tidy failed with proxy, trying direct mode..."
+        export GOPROXY=direct
+        export GONOSUMDB="*"
+        if ! go mod tidy 2>&1; then
+            print_error "Failed to run go mod tidy"
+            print_error "Check the error above for details"
+            exit 1
+        fi
+    fi
     fi
     print_success "Dependencies updated"
     
