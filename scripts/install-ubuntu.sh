@@ -719,20 +719,65 @@ NGINXCONF
     # Ensure Go is available
     export PATH=$PATH:/usr/local/go/bin
     export GOPATH=/opt/go
+    export GO111MODULE=on
+    
+    # Run go mod tidy first to update dependencies
+    print_status "Updating Go dependencies..."
+    if ! go mod tidy 2>&1; then
+        print_error "Failed to run go mod tidy"
+        print_error "Check the error above for details"
+        exit 1
+    fi
+    print_success "Dependencies updated"
+    
+    # Download dependencies
+    print_status "Downloading Go modules..."
+    if ! go mod download 2>&1; then
+        print_warning "Some modules failed to download, trying to continue..."
+    fi
     
     print_status "Building API server..."
-    go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api
+    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
+        print_error "Failed to build API server"
+        print_error "Check the error above for details"
+        exit 1
+    fi
+    print_success "API server built"
     
     print_status "Building Judge node..."
-    go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge
+    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge 2>&1; then
+        print_error "Failed to build Judge node"
+        print_error "Check the error above for details"
+        exit 1
+    fi
+    print_success "Judge node built"
     
     print_status "Building Ingestor..."
-    go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor
+    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor 2>&1; then
+        print_error "Failed to build Ingestor"
+        print_error "Check the error above for details"
+        exit 1
+    fi
+    print_success "Ingestor built"
     
     print_status "Building Compiler..."
-    go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler
+    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler 2>&1; then
+        print_error "Failed to build Compiler"
+        print_error "Check the error above for details"
+        exit 1
+    fi
+    print_success "Compiler built"
+    
+    # Verify binaries exist
+    for bin in api judge ingestor compiler; do
+        if [[ ! -f "$INSTALL_DIR/bin/$bin" ]]; then
+            print_error "Binary $bin was not created!"
+            exit 1
+        fi
+    done
     
     # Copy configs and scripts
+    print_status "Copying configuration files..."
     cp -r configs/* $INSTALL_DIR/configs/ 2>/dev/null || true
     cp -r scripts/* $INSTALL_DIR/scripts/ 2>/dev/null || true
     cp -r docs/* $INSTALL_DIR/docs/ 2>/dev/null || true
@@ -742,7 +787,7 @@ NGINXCONF
     chmod +x $INSTALL_DIR/scripts/*.sh 2>/dev/null || true
     chmod +x $INSTALL_DIR/bin/*
     
-    print_success "Binaries built successfully"
+    print_success "All binaries built successfully"
 
     #===========================================================================
     # STEP 9: Create Configuration
