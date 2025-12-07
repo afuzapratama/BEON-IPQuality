@@ -1,0 +1,4 @@
+# Place MMDB files here
+# - reputation.mmdb (compiled from IP reputation data)
+# - GeoLite2-City.mmdb (from MaxMind)
+# - GeoLite2-ASN.mmdb (from MaxMind)

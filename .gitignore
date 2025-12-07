@@ -1,0 +1,108 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+*.prof
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# ===========================================
+# DATA FILES - IMPORTANT! DO NOT COMMIT
+# ===========================================
+# MMDB files (can be large, 50MB+)
+*.mmdb
+data/mmdb/*.mmdb
+data/geoip/*.mmdb
+
+# Keep the folder structure
+!data/mmdb/.gitkeep
+
+# CSV data files
+*.csv
+data/*.csv
+
+# JSON data dumps
+data/*.json
+
+# GeoIP databases (download separately)
+GeoLite2-*.mmdb
+GeoIP2-*.mmdb
+# ===========================================
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# macOS
+.DS_Store
+
+# Linux
+*.swp
+
+# Build artifacts
+dist/
+build/
+
+# Docker
+.docker/
+
+# ===========================================
+# SECRETS - NEVER COMMIT
+# ===========================================
+*.pem
+*.key
+secrets/
+credentials/
+
+# GeoIP config with real credentials (use .example instead)
+configs/GeoIP.conf
+
+# Real config with secrets (use .example files instead)
+configs/GeoIP.conf.local
+*.secret
+*.credentials
+
+# API keys
+api_keys.txt
+# ===========================================
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Cache
+.cache/
+__pycache__/
+
+# Node (if frontend)
+node_modules/
+
+# Vendor (uncomment to ignore)
+# vendor/

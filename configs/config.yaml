@@ -1,0 +1,159 @@
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 5s
+  write_timeout: 10s
+  idle_timeout: 120s
+  
+# Environment: development, staging, production
+environment: development
+
+# Logging
+logging:
+  level: debug  # debug, info, warn, error
+  format: json  # json, text
+  output: stdout  # stdout, file
+  file_path: ./logs/app.log
+
+# PostgreSQL Database (Master Store)
+database:
+  postgres:
+    host: localhost
+    port: 5432
+    database: beon_ipquality
+    username: beon
+    password: beon_secret
+    ssl_mode: disable
+    max_connections: 100
+    min_connections: 10
+    max_conn_lifetime: 1h
+    max_conn_idle_time: 30m
+
+# ClickHouse (Analytics)
+clickhouse:
+  enabled: false
+  host: localhost
+  port: 9000
+  database: beon_analytics
+  username: default
+  password: ""
+
+# Redis (Optional Cache)
+redis:
+  enabled: true
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+# MMDB Configuration
+mmdb:
+  # Path to the custom reputation MMDB file
+  reputation_path: ./data/mmdb/reputation.mmdb
+  # Path to MaxMind GeoLite2 files
+  geolite2_city_path: ./data/mmdb/GeoLite2-City.mmdb
+  geolite2_asn_path: ./data/mmdb/GeoLite2-ASN.mmdb
+  # Output path for compiled MMDB
+  output_path: ./data/mmdb/reputation.mmdb
+  # How often to check for MMDB updates
+  reload_interval: 1h
+  # How often to recompile MMDB
+  compile_interval: 6h
+  # Record size (24, 28, or 32)
+  record_size: 28
+  # Enable memory mapping for better performance
+  memory_map: true
+
+# Risk Scoring Configuration
+scoring:
+  # Time decay lambda (higher = faster decay)
+  decay_lambda: 0.01
+  # Maximum score cap
+  max_score: 100
+  # Minimum score for flagging as risky
+  risk_threshold: 50
+  # Source weights
+  weights:
+    spamhaus_drop: 95
+    spamhaus_edrop: 95
+    abuse_feodo: 90
+    firehol_level1: 85
+    firehol_level2: 75
+    tor_exit: 70
+    datacenter_asn: 50
+    proxy_list: 40
+    vpn_provider: 45
+  # ASN type bonuses
+  asn_bonuses:
+    datacenter: 20
+    hosting: 15
+    vpn_provider: 25
+    residential: 0
+    mobile: 0
+    business: 0
+
+# Ingestor Configuration
+ingestor:
+  # Enable/disable the ingestor service
+  enabled: true
+  # Number of concurrent fetchers
+  concurrency: 10
+  # HTTP client timeout
+  http_timeout: 30s
+  # Retry configuration
+  max_retries: 3
+  retry_delay: 5s
+  # User agent for requests
+  user_agent: "BEON-IPQuality-Ingestor/1.0"
+
+# API Configuration
+api:
+  # Enable API key authentication
+  auth_enabled: false
+  # Default rate limit (requests per minute)
+  rate_limit: 1000
+  # Rate limit window
+  rate_limit_window: 1m
+  # Allow batch requests
+  batch_enabled: true
+  # Maximum IPs per batch request
+  batch_max_size: 100
+  # CORS configuration
+  cors:
+    enabled: true
+    allow_origins: ["*"]
+    allow_methods: ["GET", "POST", "OPTIONS"]
+    allow_headers: ["Origin", "Content-Type", "Accept", "X-API-Key"]
+
+# Judge Node Configuration (Active Scanning)
+judge:
+  enabled: true
+  # Judge node port
+  port: 8081
+  # Enable prefork for multi-core
+  prefork: false
+  # Scanner concurrency
+  concurrency: 50
+  # Connection timeout
+  timeout: 5s
+  # Ports to scan
+  scan_ports: [80, 443, 8080, 3128, 1080, 8888]
+  # Scan timeout in seconds
+  scan_timeout: 3
+  # Number of scan workers
+  scan_workers: 10
+  # Rate limit (scans per second)
+  rate_limit: 100
+
+# Metrics & Monitoring
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics
+
+# Health Check
+health:
+  enabled: true
+  path: /health

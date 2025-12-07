@@ -1,0 +1,350 @@
+services:
+  # =============================================================================
+  # Core Databases
+  # =============================================================================
+  
+  postgres:
+    image: postgres:17-alpine
+    container_name: beon-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beon_secure_password}
+      POSTGRES_DB: ipquality
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beon -d ipquality"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beon-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: beon-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beon-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: beon-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ipquality
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ./migrations/clickhouse:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beon-network
+
+  # =============================================================================
+  # Application Services
+  # =============================================================================
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: beon-api
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - CONFIG_PATH=/app/configs/config.yaml
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=beon
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-beon_secure_password}
+      - DB_NAME=ipquality
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_ENABLED=true
+      - MMDB_PATH=/app/data/ipquality.mmdb
+      - GEOIP_CITY_PATH=/app/data/GeoLite2-City.mmdb
+      - GEOIP_ASN_PATH=/app/data/GeoLite2-ASN.mmdb
+      - GEOIP_COUNTRY_PATH=/app/data/GeoLite2-Country.mmdb
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_DATABASE=ipquality
+    volumes:
+      - ./data:/app/data:ro
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beon-network
+
+  judge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: judge
+    container_name: beon-judge
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8081
+      - CONFIG_PATH=/app/configs/config.yaml
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MMDB_PATH=/app/data/ipquality.mmdb
+      - SCAN_TIMEOUT=10s
+      - SCAN_WORKERS=50
+    volumes:
+      - ./data:/app/data:ro
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    networks:
+      - beon-network
+
+  ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ingestor
+    container_name: beon-ingestor
+    restart: "no"
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=beon
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-beon_secure_password}
+      - DB_NAME=ipquality
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+    networks:
+      - beon-network
+
+  compiler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: compiler
+    container_name: beon-compiler
+    restart: "no"
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=beon
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-beon_secure_password}
+      - DB_NAME=ipquality
+      - MMDB_OUTPUT=/app/data/ipquality.mmdb
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+    networks:
+      - beon-network
+
+  # =============================================================================
+  # Monitoring Stack
+  # =============================================================================
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: beon-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beon-network
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: beon-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./configs/grafana/provisioning/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./configs/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beon-network
+
+  # =============================================================================
+  # Exporters for Monitoring
+  # =============================================================================
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: beon-redis-exporter
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - beon-network
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: beon-postgres-exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://beon:${POSTGRES_PASSWORD:-beon_secure_password}@postgres:5432/ipquality?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - beon-network
+
+  # =============================================================================
+  # GeoIP Auto-Update (Optional)
+  # =============================================================================
+
+  geoip-updater:
+    image: maxmindinc/geoipupdate:v6
+    container_name: beon-geoip-updater
+    restart: unless-stopped
+    environment:
+      - GEOIPUPDATE_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
+      - GEOIPUPDATE_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+      - GEOIPUPDATE_EDITION_IDS=GeoLite2-City GeoLite2-ASN GeoLite2-Country
+      - GEOIPUPDATE_FREQUENCY=24
+    volumes:
+      - ./data:/usr/share/GeoIP
+    profiles:
+      - geoip
+    networks:
+      - beon-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+
+networks:
+  beon-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  clickhouse_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

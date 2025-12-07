@@ -1,0 +1,32 @@
+# MaxMind GeoIP Update Configuration
+# This file is used by geoipupdate to automatically download GeoLite2 databases
+
+# AccountID is from your MaxMind account
+AccountID YOUR_ACCOUNT_ID
+
+# LicenseKey is from your MaxMind account
+LicenseKey YOUR_LICENSE_KEY
+
+# EditionIDs - which databases to download
+# GeoLite2-ASN: ASN/Organization lookup
+# GeoLite2-City: City-level geolocation
+# GeoLite2-Country: Country-level geolocation (smaller, faster)
+EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
+
+# DatabaseDirectory - where to store the downloaded databases
+DatabaseDirectory /mnt/DataDrive/project-beon/BEON-IPQuality/data/mmdb
+
+# Host - MaxMind update server (optional, defaults to updates.maxmind.com)
+# Host updates.maxmind.com
+
+# Proxy - HTTP proxy (optional)
+# Proxy proxy.example.com:8080
+
+# ProxyUserPassword - Proxy authentication (optional)
+# ProxyUserPassword user:password
+
+# PreserveFileTimes - preserve modification times (optional)
+PreserveFileTimes 0
+
+# LockFile - prevent concurrent updates (optional)
+LockFile /tmp/geoipupdate.lock

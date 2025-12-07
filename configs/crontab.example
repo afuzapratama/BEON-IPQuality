@@ -1,0 +1,32 @@
+# BEON-IPQuality Cron Jobs
+# Add these entries to your crontab: crontab -e
+
+# ============================================
+# MaxMind GeoIP Database Update
+# ============================================
+# Update every Wednesday at 3:00 AM (MaxMind updates on Tuesdays)
+0 3 * * 3 /mnt/DataDrive/project-beon/BEON-IPQuality/scripts/update-geoip.sh >> /var/log/beon-geoip-update.log 2>&1
+
+# ============================================
+# Threat Feed Ingestor
+# ============================================
+# Run ingestor every 6 hours to fetch new threat data
+0 */6 * * * cd /mnt/DataDrive/project-beon/BEON-IPQuality && ./bin/ingestor >> /var/log/beon-ingestor.log 2>&1
+
+# ============================================
+# MMDB Compiler
+# ============================================
+# Compile MMDB every hour (after ingestor has new data)
+30 */1 * * * cd /mnt/DataDrive/project-beon/BEON-IPQuality && ./bin/compiler >> /var/log/beon-compiler.log 2>&1
+
+# ============================================
+# API Reload Signal (Optional)
+# ============================================
+# Send SIGHUP to API process to reload MMDB after compilation
+35 */1 * * * pkill -HUP -f "bin/api" 2>/dev/null || true
+
+# ============================================
+# Log Rotation (Optional)
+# ============================================
+# Rotate logs weekly
+0 0 * * 0 find /var/log/beon-*.log -mtime +30 -delete
