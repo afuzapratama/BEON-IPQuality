@@ -38,6 +38,7 @@ API_KEY=""
 GRAFANA_PASSWORD=""
 CLICKHOUSE_PASSWORD=""
 REDIS_PASSWORD=""
+MAXMIND_ACCOUNT_ID=""
 MAXMIND_LICENSE_KEY=""
 SKIP_DEPS=false
 INTERACTIVE=true
@@ -94,51 +95,77 @@ interactive_setup() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    # MaxMind License Key (REQUIRED for GeoIP)
+    # MaxMind GeoLite2 Setup
     echo -e "${YELLOW}┌─────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${YELLOW}│  MaxMind GeoLite2 License Key (Required for GeoIP features)    │${NC}"
+    echo -e "${YELLOW}│  MaxMind GeoLite2 Configuration (Required for GeoIP features)  │${NC}"
     echo -e "${YELLOW}├─────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${YELLOW}│  Get your FREE license key at:                                 │${NC}"
+    echo -e "${YELLOW}│  Get your FREE Account ID & License Key at:                    │${NC}"
     echo -e "${YELLOW}│  ${CYAN}https://www.maxmind.com/en/geolite2/signup${YELLOW}                     │${NC}"
     echo -e "${YELLOW}│                                                                 │${NC}"
     echo -e "${YELLOW}│  Steps:                                                         │${NC}"
     echo -e "${YELLOW}│  1. Register for a free account                                │${NC}"
-    echo -e "${YELLOW}│  2. Go to Account → Manage License Keys                        │${NC}"
-    echo -e "${YELLOW}│  3. Generate a new license key                                 │${NC}"
+    echo -e "${YELLOW}│  2. After login, your Account ID is shown on dashboard         │${NC}"
+    echo -e "${YELLOW}│  3. Go to Account → Manage License Keys → Generate New Key     │${NC}"
     echo -e "${YELLOW}└─────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
     
-    if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
-        # For curl | bash, we need to read directly from /dev/tty
-        if [[ ! -e /dev/tty ]]; then
-            print_warning "No terminal available for input - skipping MaxMind key prompt"
-            print_warning "Use --maxmind-key option or configure later"
-            MAXMIND_LICENSE_KEY=""
-            return
-        fi
-        
+    # Check if terminal available for input
+    if [[ ! -e /dev/tty ]]; then
+        print_warning "No terminal available for input - skipping MaxMind prompts"
+        print_warning "Use --maxmind-account and --maxmind-key options or configure later"
+        MAXMIND_ACCOUNT_ID=""
+        MAXMIND_LICENSE_KEY=""
+        return
+    fi
+    
+    # Prompt for Account ID
+    if [[ -z "$MAXMIND_ACCOUNT_ID" ]]; then
         while true; do
-            echo -ne "${BLUE}Enter MaxMind License Key (or 'skip' to configure later): ${NC}"
-            # Read directly from /dev/tty - this works with curl | bash
-            MAXMIND_LICENSE_KEY=""
-            read -r MAXMIND_LICENSE_KEY </dev/tty || true
+            echo -ne "${BLUE}Enter MaxMind Account ID (6-digit number, or 'skip'): ${NC}"
+            read -r MAXMIND_ACCOUNT_ID </dev/tty || true
             
-            if [[ "$MAXMIND_LICENSE_KEY" == "skip" || -z "$MAXMIND_LICENSE_KEY" ]]; then
+            if [[ "$MAXMIND_ACCOUNT_ID" == "skip" || -z "$MAXMIND_ACCOUNT_ID" ]]; then
+                MAXMIND_ACCOUNT_ID=""
                 MAXMIND_LICENSE_KEY=""
-                print_warning "MaxMind key skipped - GeoIP features will be limited"
-                print_warning "You can add it later in: ${INSTALL_DIR}/configs/GeoIP.conf"
-                break
-            elif [[ ${#MAXMIND_LICENSE_KEY} -ge 10 ]]; then
-                print_success "MaxMind License Key configured"
+                print_warning "MaxMind setup skipped - GeoIP features will be limited"
+                print_warning "You can configure later: ${INSTALL_DIR}/configs/GeoIP.conf"
+                echo ""
+                print_status "All other credentials will be auto-generated..."
+                echo ""
+                return
+            elif [[ "$MAXMIND_ACCOUNT_ID" =~ ^[0-9]+$ ]]; then
+                print_success "Account ID: ${MAXMIND_ACCOUNT_ID}"
                 break
             else
-                print_error "Invalid key format. Please try again or type 'skip'"
+                print_error "Invalid Account ID. Must be a number (e.g., 123456)"
+            fi
+        done
+    else
+        print_success "MaxMind Account ID provided via argument: ${MAXMIND_ACCOUNT_ID}"
+    fi
+    
+    # Prompt for License Key  
+    if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
+        while true; do
+            echo -ne "${BLUE}Enter MaxMind License Key: ${NC}"
+            read -r MAXMIND_LICENSE_KEY </dev/tty || true
+            
+            if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
+                print_error "License Key is required if Account ID is provided"
+                continue
+            elif [[ ${#MAXMIND_LICENSE_KEY} -ge 10 ]]; then
+                print_success "License Key configured"
+                break
+            else
+                print_error "Invalid key format (too short). Please try again."
             fi
         done
     else
         print_success "MaxMind License Key provided via argument"
     fi
     
+    echo ""
+    print_success "MaxMind GeoIP configured successfully!"
     echo ""
     print_status "All other credentials will be auto-generated..."
     echo ""
@@ -220,6 +247,7 @@ REDIS_PORT=6379
 REDIS_PASSWORD=${REDIS_PASSWORD:-"(no password - local only)"}
 
 # MaxMind GeoIP
+MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID:-"(not configured)"}
 MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY:-"(not configured)"}
 
 # Service URLs
@@ -274,7 +302,8 @@ GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
 # API Keys
 API_MASTER_KEY=${API_KEY}
 
-# MaxMind License Key
+# MaxMind GeoIP
+MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
 MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
 
 # Environment
@@ -300,6 +329,7 @@ Usage: $0 [OPTIONS]
 Options:
     --db-password PASSWORD    Set PostgreSQL password (auto-generated if not set)
     --api-key KEY             Set API key (auto-generated if not set)
+    --maxmind-account ID      Set MaxMind Account ID (prompted if not set)
     --maxmind-key KEY         Set MaxMind license key (prompted if not set)
     --grafana-password PASS   Set Grafana password (auto-generated if not set)
     --skip-deps               Skip installing system dependencies
@@ -311,11 +341,11 @@ Examples:
     # One-line install (recommended - interactive)
     curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash
 
-    # With MaxMind key (skip prompt)
-    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash -s -- --maxmind-key "YOUR_KEY"
+    # With MaxMind credentials (skip prompt)
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash -s -- --maxmind-account "123456" --maxmind-key "YOUR_KEY"
 
     # Fully automated (non-interactive)
-    sudo ./install-ubuntu.sh --maxmind-key "YOUR_KEY" --non-interactive
+    sudo ./install-ubuntu.sh --maxmind-account "123456" --maxmind-key "YOUR_KEY" --non-interactive
 
 EOF
     exit 0
@@ -329,6 +359,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --api-key)
             API_KEY="$2"
+            shift 2
+            ;;
+        --maxmind-account)
+            MAXMIND_ACCOUNT_ID="$2"
             shift 2
             ;;
         --maxmind-key)
@@ -1049,12 +1083,12 @@ LOGROTATE
     
     # Configure GeoIP.conf
     print_status "Configuring MaxMind GeoIP..."
-    if [[ -n "$MAXMIND_LICENSE_KEY" ]]; then
+    if [[ -n "$MAXMIND_ACCOUNT_ID" && -n "$MAXMIND_LICENSE_KEY" ]]; then
         cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
 # GeoIP.conf - MaxMind Configuration
 # Auto-generated during installation
 
-AccountID 0
+AccountID ${MAXMIND_ACCOUNT_ID}
 LicenseKey ${MAXMIND_LICENSE_KEY}
 EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
 
@@ -1063,15 +1097,27 @@ LockFile ${DATA_DIR}/mmdb/.geoipupdate.lock
 GEOIPCONF
         chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
         chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
-        print_success "MaxMind GeoIP configured"
+        print_success "MaxMind GeoIP configured with Account ID: ${MAXMIND_ACCOUNT_ID}"
+        
+        # Try to download GeoIP databases immediately
+        print_status "Downloading GeoIP databases..."
+        if sudo -u ${USER} geoipupdate -f ${INSTALL_DIR}/configs/GeoIP.conf -d ${DATA_DIR}/mmdb 2>/dev/null; then
+            print_success "GeoIP databases downloaded successfully"
+        else
+            print_warning "GeoIP download failed - will retry on first run"
+        fi
     else
         # Create placeholder GeoIP.conf
         cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
 # GeoIP.conf - MaxMind Configuration
 # IMPORTANT: Add your MaxMind credentials to enable GeoIP updates
-# Get free license key at: https://www.maxmind.com/en/geolite2/signup
+# Get your FREE Account ID & License Key at: https://www.maxmind.com/en/geolite2/signup
+#
+# After login:
+#   - Account ID is shown on your dashboard (6-digit number)
+#   - License Key: Account → Manage License Keys → Generate New Key
 
-AccountID 0
+AccountID YOUR_ACCOUNT_ID_HERE
 LicenseKey YOUR_LICENSE_KEY_HERE
 EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
 
@@ -1080,7 +1126,8 @@ LockFile ${DATA_DIR}/mmdb/.geoipupdate.lock
 GEOIPCONF
         chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
         chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
-        print_warning "GeoIP.conf created with placeholder - add your MaxMind key later"
+        print_warning "GeoIP.conf created with placeholder - configure with your MaxMind credentials"
+        print_warning "Edit: nano ${INSTALL_DIR}/configs/GeoIP.conf"
     fi
     
     #===========================================================================
@@ -1105,31 +1152,38 @@ GEOIPCONF
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
+    local step_num=1
+    
     # Check if MaxMind is configured
-    if [[ -n "$MAXMIND_LICENSE_KEY" ]]; then
-        echo -e "  ${GREEN}✓${NC} MaxMind GeoIP configured"
+    if [[ -n "$MAXMIND_ACCOUNT_ID" && -n "$MAXMIND_LICENSE_KEY" ]]; then
+        echo -e "  ${GREEN}✓${NC} MaxMind GeoIP configured (Account: ${MAXMIND_ACCOUNT_ID})"
         echo ""
-        echo -e "  ${GREEN}1.${NC} Download GeoIP databases:"
-        echo -e "     ${CYAN}sudo ${INSTALL_DIR}/scripts/update-geoip.sh${NC}"
     else
-        echo -e "  ${YELLOW}!${NC} MaxMind GeoIP not configured (optional)"
-        echo ""
-        echo -e "  ${GREEN}1.${NC} Setup MaxMind GeoIP (get free key at maxmind.com):"
+        echo -e "  ${GREEN}${step_num}.${NC} Setup MaxMind GeoIP (RECOMMENDED - get free key at maxmind.com):"
         echo -e "     ${CYAN}nano ${INSTALL_DIR}/configs/GeoIP.conf${NC}"
-        echo -e "     ${CYAN}sudo ${INSTALL_DIR}/scripts/update-geoip.sh${NC}"
+        echo -e "     Add your AccountID and LicenseKey, then run:"
+        echo -e "     ${CYAN}sudo -u beon geoipupdate -f ${INSTALL_DIR}/configs/GeoIP.conf -d ${DATA_DIR}/mmdb${NC}"
+        echo ""
+        step_num=$((step_num + 1))
     fi
-    echo ""
-    echo -e "  ${GREEN}2.${NC} Run initial data ingestion:"
+    
+    echo -e "  ${GREEN}${step_num}.${NC} Run initial data ingestion:"
     echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml -feeds ${INSTALL_DIR}/configs/feeds.yaml${NC}"
     echo ""
-    echo -e "  ${GREEN}3.${NC} Compile MMDB database:"
+    step_num=$((step_num + 1))
+    
+    echo -e "  ${GREEN}${step_num}.${NC} Compile MMDB database:"
     echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/compiler -config ${INSTALL_DIR}/configs/config.yaml${NC}"
     echo ""
-    echo -e "  ${GREEN}4.${NC} Start the API server:"
+    step_num=$((step_num + 1))
+    
+    echo -e "  ${GREEN}${step_num}.${NC} Start the API server:"
     echo -e "     ${CYAN}sudo systemctl start beon-api${NC}"
     echo -e "     ${CYAN}sudo systemctl enable beon-api${NC}"
     echo ""
-    echo -e "  ${GREEN}5.${NC} Configure your domain (RECOMMENDED):"
+    step_num=$((step_num + 1))
+    
+    echo -e "  ${GREEN}${step_num}.${NC} Configure your domain (OPTIONAL):"
     echo -e "     ${CYAN}sudo ${INSTALL_DIR}/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com${NC}"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
