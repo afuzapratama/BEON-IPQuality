@@ -864,18 +864,39 @@ server:
   port: 8080
   read_timeout: 30s
   write_timeout: 30s
+  idle_timeout: 120s
+
+environment: production
+
+logging:
+  level: "info"
+  format: "json"
+  output: "file"
+  file_path: "${LOG_DIR}/api.log"
 
 database:
+  postgres:
+    host: "localhost"
+    port: 5432
+    database: "ipquality"
+    username: "beon"
+    password: "${DB_PASSWORD}"
+    ssl_mode: "disable"
+    max_connections: 50
+    min_connections: 10
+    max_conn_lifetime: 1h
+    max_conn_idle_time: 30m
+
+clickhouse:
+  enabled: false
   host: "localhost"
-  port: 5432
-  user: "beon"
-  password: "${DB_PASSWORD}"
-  name: "ipquality"
-  sslmode: "disable"
-  max_conns: 50
-  max_idle_conns: 10
+  port: 9000
+  database: "beon_analytics"
+  username: "default"
+  password: ""
 
 redis:
+  enabled: true
   host: "localhost"
   port: 6379
   password: ""
@@ -883,29 +904,72 @@ redis:
   pool_size: 100
 
 mmdb:
-  path: "${DATA_DIR}/mmdb/ipquality.mmdb"
-  geoip_city: "${DATA_DIR}/geoip/GeoLite2-City.mmdb"
-  geoip_asn: "${DATA_DIR}/geoip/GeoLite2-ASN.mmdb"
+  reputation_path: "${DATA_DIR}/mmdb/reputation.mmdb"
+  geolite2_city_path: "${DATA_DIR}/mmdb/GeoLite2-City.mmdb"
+  geolite2_asn_path: "${DATA_DIR}/mmdb/GeoLite2-ASN.mmdb"
+  output_path: "${DATA_DIR}/mmdb/reputation.mmdb"
+  reload_interval: 1h
+  compile_interval: 6h
+  record_size: 28
+  memory_map: true
 
-cache:
-  ttl: 300
-  max_size: 100000
+scoring:
+  decay_lambda: 0.01
+  max_score: 100
+  risk_threshold: 50
+  weights:
+    spamhaus_drop: 95
+    spamhaus_edrop: 95
+    feodo_tracker: 90
+    sslbl: 85
+    tor_exit: 70
+    firehol_level1: 80
+    firehol_level2: 60
+    emerging_threats: 75
+    blocklist_de: 65
+    ipsum: 55
+    datacenter: 40
+    proxy_list: 50
+
+ingestor:
+  batch_size: 1000
+  workers: 4
+  update_interval: 4h
+  retry_attempts: 3
+  retry_delay: 30s
 
 api:
-  key: "${API_KEY}"
-  rate_limit: 1000
-  rate_limit_window: 60
-
-logging:
-  level: "info"
-  format: "json"
-  output: "${LOG_DIR}/api.log"
+  master_key: "${API_KEY}"
+  rate_limit:
+    enabled: true
+    requests_per_minute: 1000
+    burst: 100
+  cors:
+    enabled: true
+    allowed_origins:
+      - "*"
 
 judge:
   enabled: false
   port: 8081
   workers: 10
   timeout: 5s
+  proxy_check:
+    enabled: true
+    ports:
+      - 80
+      - 8080
+      - 3128
+      - 1080
+
+metrics:
+  enabled: true
+  path: "/metrics"
+  port: 9090
+
+health:
+  enabled: true
+  path: "/health"
 CONFIGYAML
     
     # Set permissions
