@@ -146,10 +146,14 @@ func (db *PostgresDB) InsertReputationBatch(ctx context.Context, entries []IPRep
 	defer results.Close()
 
 	inserted := 0
-	for range entries {
+	for i := range entries {
 		_, err := results.Exec()
 		if err != nil {
-			// Log but continue
+			// Log the error with entry details for debugging
+			if i < 3 { // Only log first 3 errors to avoid spam
+				logger.Error(fmt.Sprintf("Batch insert error for entry %d (ip=%s, source=%s): %v",
+					i, entries[i].IPStart, entries[i].Source, err))
+			}
 			continue
 		}
 		inserted++

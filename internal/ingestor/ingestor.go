@@ -41,7 +41,7 @@ func New(cfg *config.Config, feedsCfg *config.FeedsConfig, db *database.Postgres
 		feedsConfig: feedsCfg,
 		httpClient:  httpClient,
 		db:          db,
-		cron:        cron.New(cron.WithSeconds()),
+		cron:        cron.New(), // Standard 5-field cron format (minute, hour, day, month, weekday)
 	}, nil
 }
 
