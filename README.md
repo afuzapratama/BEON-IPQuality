@@ -51,53 +51,105 @@ curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/sc
 
 #### What Happens During Installation:
 
-1. **Interactive Setup** - You'll be prompted for MaxMind License Key (only manual input needed)
-2. **Auto-Install** - Go 1.23, PostgreSQL 17, Redis 7, Nginx
-3. **Auto-Generate** - All passwords & API keys are generated automatically
-4. **Auto-Configure** - All services configured and ready
+1. **Interactive Setup** - You'll be prompted for MaxMind Account ID & License Key
+2. **Auto-Install** - Go 1.21+, PostgreSQL 17, Redis 7, Nginx, geoipupdate
+3. **Auto-Generate** - All passwords & API keys generated automatically
+4. **Auto-Configure** - All services configured and ready to use
+5. **Auto-Download** - GeoIP databases downloaded if credentials provided
+
+#### Interactive Prompts:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  MaxMind GeoLite2 Configuration (Required for GeoIP features)  │
+├─────────────────────────────────────────────────────────────────┤
+│  Get your FREE Account ID & License Key at:                    │
+│  https://www.maxmind.com/en/geolite2/signup                    │
+└─────────────────────────────────────────────────────────────────┘
+
+Enter MaxMind Account ID (6-digit number, or 'skip'): 123456
+Enter MaxMind License Key: abcdef1234567890
+```
+
+> 💡 **Tip**: Type `skip` if you don't have MaxMind credentials yet. You can configure later.
 
 #### After Installation:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  🔑 API MASTER KEY (SAVE THIS!)                              │
-├──────────────────────────────────────────────────────────────┤
-│  a7Bk9mNpQrStUvWxYz12345678901234                            │
-│                                                               │
-│  ⚠️  All credentials saved to: /opt/beon-ipquality/credentials.txt
-└──────────────────────────────────────────────────────────────┘
+╔══════════════════════════════════════════════════════════════════╗
+║          BEON-IPQuality Installation Complete! 🎉               ║
+╚══════════════════════════════════════════════════════════════════╝
+
+🔑 API MASTER KEY (SAVE THIS!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  a7Bk9mNpQrStUvWxYz12345678901234
+
+  ⚠️  All credentials saved to: /opt/beon-ipquality/credentials.txt
+  ⚠️  Environment config at:    /opt/beon-ipquality/.env
 ```
 
 ### Installation Options
 
 ```bash
-# Interactive install (recommended)
+# Interactive install (recommended) - will prompt for MaxMind credentials
 curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
 
-# With MaxMind key (skip prompt)
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash -s -- --maxmind-key "YOUR_LICENSE_KEY"
+# With MaxMind credentials (skip prompt)
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | \
+  sudo bash -s -- --maxmind-account "123456" --maxmind-key "YOUR_LICENSE_KEY"
 
-# Fully automated (no prompts)
-curl -fsSL ... | sudo bash -s -- --maxmind-key "YOUR_KEY" --non-interactive
+# Fully automated (no prompts at all)
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | \
+  sudo bash -s -- --maxmind-account "123456" --maxmind-key "YOUR_KEY" --non-interactive
+
+# Skip MaxMind setup (configure later)
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | \
+  sudo bash -s -- --non-interactive
 ```
 
 ### Post-Install Steps
 
 ```bash
-# 1. Download GeoIP databases (if MaxMind key was provided)
-sudo /opt/beon-ipquality/scripts/update-geoip.sh
+# 1. Run initial data ingestion (download threat feeds)
+sudo -u beon /opt/beon-ipquality/bin/ingestor \
+  -config /opt/beon-ipquality/configs/config.yaml \
+  -feeds /opt/beon-ipquality/configs/feeds.yaml
 
-# 2. Run initial data ingestion
-sudo -u beon /opt/beon-ipquality/bin/ingestor -config /opt/beon-ipquality/configs/config.yaml
+# 2. Compile MMDB database
+sudo -u beon /opt/beon-ipquality/bin/compiler \
+  -config /opt/beon-ipquality/configs/config.yaml
 
-# 3. Compile MMDB
-sudo -u beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml
-
-# 4. Start the API
+# 3. Start the API server
 sudo systemctl start beon-api && sudo systemctl enable beon-api
 
-# 5. Configure domain with SSL (recommended)
+# 4. Test the API
+curl -H "X-API-Key: YOUR_API_KEY" http://localhost:8080/api/v1/check/8.8.8.8
+
+# 5. (Optional) Configure domain with SSL
 sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com
+```
+
+### Quick Fix (For Existing Installations)
+
+If you already installed and need to configure MaxMind credentials:
+
+```bash
+# 1. Set your MaxMind credentials
+sudo tee /opt/beon-ipquality/configs/GeoIP.conf << 'EOF'
+AccountID YOUR_ACCOUNT_ID_HERE
+LicenseKey YOUR_LICENSE_KEY_HERE
+EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
+DatabaseDirectory /opt/beon-ipquality/data/mmdb
+EOF
+
+# 2. Download GeoIP databases
+sudo -u beon geoipupdate -f /opt/beon-ipquality/configs/GeoIP.conf \
+  -d /opt/beon-ipquality/data/mmdb -v
+
+# 3. Run ingestor with correct flags
+sudo -u beon /opt/beon-ipquality/bin/ingestor \
+  -config /opt/beon-ipquality/configs/config.yaml \
+  -feeds /opt/beon-ipquality/configs/feeds.yaml
 ```
 
 ### View Your Credentials
@@ -107,12 +159,14 @@ sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --e
 sudo cat /opt/beon-ipquality/credentials.txt
 ```
 
-### Get MaxMind License Key (Free)
+### Get MaxMind Credentials (Free)
 
 1. Register at [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup)
-2. Go to **Account → Manage License Keys**
-3. Click **Generate new license key**
-4. Use this key during installation or add later to `/opt/beon-ipquality/configs/GeoIP.conf`
+2. After login, your **Account ID** is shown on the dashboard (6-digit number)
+3. Go to **Account → Manage License Keys → Generate new license key**
+4. Use both Account ID and License Key during installation
+
+> 📝 **Note**: You need BOTH Account ID and License Key. The installer will prompt for both.
 
 ### Manual Installation
 
