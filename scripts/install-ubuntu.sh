@@ -109,15 +109,8 @@ interactive_setup() {
     echo ""
     
     if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
-        # Check if we can read from terminal (important for curl | bash)
-        if [[ -t 0 ]]; then
-            # Running interactively - stdin is terminal
-            INPUT_SOURCE="/dev/stdin"
-        elif [[ -e /dev/tty ]]; then
-            # Running via pipe (curl | bash) - use /dev/tty directly
-            INPUT_SOURCE="/dev/tty"
-        else
-            # No terminal available - skip interactive
+        # For curl | bash, we need to read directly from /dev/tty
+        if [[ ! -e /dev/tty ]]; then
             print_warning "No terminal available for input - skipping MaxMind key prompt"
             print_warning "Use --maxmind-key option or configure later"
             MAXMIND_LICENSE_KEY=""
@@ -126,7 +119,9 @@ interactive_setup() {
         
         while true; do
             echo -ne "${BLUE}Enter MaxMind License Key (or 'skip' to configure later): ${NC}"
-            read -r MAXMIND_LICENSE_KEY < "$INPUT_SOURCE"
+            # Read directly from /dev/tty - this works with curl | bash
+            MAXMIND_LICENSE_KEY=""
+            read -r MAXMIND_LICENSE_KEY </dev/tty || true
             
             if [[ "$MAXMIND_LICENSE_KEY" == "skip" || -z "$MAXMIND_LICENSE_KEY" ]]; then
                 MAXMIND_LICENSE_KEY=""
