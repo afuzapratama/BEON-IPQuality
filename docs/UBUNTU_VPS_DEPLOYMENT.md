@@ -1,99 +1,266 @@
-# BEON-IPQuality Ubuntu VPS Deployment Guide
+# 🚀 BEON-IPQuality Ubuntu VPS Deployment Guide
+
+## Quick Start (One-Line Install)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
+```
+
+That's it! The script will:
+- ✅ Install Go 1.23, PostgreSQL 17, Redis 7, Nginx
+- ✅ Clone the repository from GitHub
+- ✅ Build all binaries
+- ✅ Configure database, firewall, and services
+- ✅ Generate secure credentials automatically
+
+---
 
 ## Prerequisites
 
-- **OS**: Ubuntu 22.04 LTS or 24.04 LTS
-- **RAM**: Minimum 2GB (4GB+ recommended)
-- **Storage**: 20GB+ SSD
-- **CPU**: 2+ cores recommended
-- **Root access** or sudo privileges
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| **OS** | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
+| **RAM** | 2GB | 4GB+ |
+| **Storage** | 20GB SSD | 40GB+ SSD |
+| **CPU** | 1 core | 2+ cores |
 
-## Quick Installation
+---
 
-### One-Line Install
+## Installation Options
 
-```bash
-# Clone repository
-git clone https://github.com/your-org/BEON-IPQuality.git /tmp/BEON-IPQuality
-
-# Run installer
-sudo bash /tmp/BEON-IPQuality/scripts/install-ubuntu.sh
-```
-
-### Manual Installation
-
-1. **Update System**
-```bash
-sudo apt update && sudo apt upgrade -y
-```
-
-2. **Install Go 1.23**
-```bash
-wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
-source ~/.profile
-```
-
-3. **Install PostgreSQL 17**
-```bash
-sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
-sudo apt update
-sudo apt install -y postgresql-17
-```
-
-4. **Install Redis 7**
-```bash
-curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
-sudo apt update
-sudo apt install -y redis-server
-```
-
-5. **Build BEON-IPQuality**
-```bash
-cd /opt
-git clone https://github.com/your-org/BEON-IPQuality.git
-cd BEON-IPQuality
-
-go build -o bin/api ./cmd/api
-go build -o bin/judge ./cmd/judge
-go build -o bin/ingestor ./cmd/ingestor
-go build -o bin/compiler ./cmd/compiler
-```
-
-## Post-Installation Configuration
-
-### 1. Database Setup
+### Option 1: One-Line Install (Recommended)
 
 ```bash
-# Access PostgreSQL
-sudo -u postgres psql
-
-# Create user and database
-CREATE USER beon WITH PASSWORD 'your_secure_password';
-CREATE DATABASE ipquality OWNER beon;
-GRANT ALL PRIVILEGES ON DATABASE ipquality TO beon;
-\c ipquality
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-\q
+# Basic installation (auto-generates all credentials)
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
 ```
 
-### 2. Configuration File
+### Option 2: Custom Credentials
 
-Edit `/opt/beon-ipquality/configs/config.yaml`:
+```bash
+# With custom database password
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash -s -- --db-password "YourSecurePassword123"
+
+# With custom API key
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash -s -- --api-key "your32characterapikey1234567890"
+```
+
+### Option 3: Manual Download
+
+```bash
+# Download script first
+wget https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh
+
+# Review the script
+less install-ubuntu.sh
+
+# Run with options
+sudo bash install-ubuntu.sh --db-password "YourPassword" --api-key "YourAPIKey"
+```
+
+---
+
+## Post-Installation Steps
+
+After installation completes, follow these steps:
+
+### Step 1: Setup MaxMind GeoIP
+
+Get a free license key from [MaxMind](https://www.maxmind.com/en/geolite2/signup):
+
+```bash
+# Copy example config
+cp /opt/beon-ipquality/configs/GeoIP.conf.example /opt/beon-ipquality/configs/GeoIP.conf
+
+# Edit with your credentials
+nano /opt/beon-ipquality/configs/GeoIP.conf
+# Change: AccountID YOUR_ACCOUNT_ID
+# Change: LicenseKey YOUR_LICENSE_KEY
+
+# Download GeoIP databases
+/opt/beon-ipquality/scripts/update-geoip.sh
+```
+
+### Step 2: Run Initial Data Ingestion
+
+```bash
+# Fetch threat intelligence feeds
+sudo -u beon /opt/beon-ipquality/bin/ingestor -config /opt/beon-ipquality/configs/config.yaml
+```
+
+### Step 3: Compile MMDB Database
+
+```bash
+# Compile IP reputation database
+sudo -u beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml
+```
+
+### Step 4: Start the API
+
+```bash
+# Start and enable the API service
+sudo systemctl start beon-api
+sudo systemctl enable beon-api
+
+# Check status
+sudo systemctl status beon-api
+
+# Test the API
+curl http://localhost/health
+curl "http://localhost/api/v1/check?ip=8.8.8.8"
+```
+
+### Step 5: Configure Domain (Recommended)
+
+```bash
+# With SSL (production)
+sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com
+
+# Without SSL (development)
+sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --skip-ssl
+```
+
+---
+
+## Service Access URLs
+
+After domain configuration, access your services at:
+
+| Service | URL |
+|---------|-----|
+| **Main API** | `https://api.yourdomain.com` |
+| **Health Check** | `https://api.yourdomain.com/health` |
+| **Grafana** | `http://api.yourdomain.com:3000` |
+| **Judge Node** | `http://api.yourdomain.com:8081` |
+| **Prometheus** | `http://api.yourdomain.com:9090` |
+| **Metrics** | `http://api.yourdomain.com:9100/metrics` |
+
+---
+
+## Architecture
+
+```
+                         Internet
+                             │
+                             ▼
+                    ┌────────────────┐
+                    │   Cloudflare   │  (Optional DDoS protection)
+                    └───────┬────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Ubuntu VPS                                │
+│                                                                  │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │              Nginx (Port 80/443)                          │  │
+│   │  • SSL termination                                        │  │
+│   │  • Rate limiting (100 req/s)                              │  │
+│   │  • Reverse proxy                                          │  │
+│   └────────────────────────┬─────────────────────────────────┘  │
+│                            │                                     │
+│                            ▼                                     │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │           BEON API Server (127.0.0.1:8080)                │  │
+│   │  • IP reputation checks (<1ms)                            │  │
+│   │  • MMDB lookups                                           │  │
+│   │  • Risk scoring                                           │  │
+│   └────────────────────────┬─────────────────────────────────┘  │
+│                            │                                     │
+│              ┌─────────────┴─────────────┐                       │
+│              ▼                           ▼                       │
+│   ┌──────────────────┐       ┌──────────────────┐               │
+│   │   PostgreSQL 17  │       │     Redis 7      │               │
+│   │   (Port 5432)    │       │   (Port 6379)    │               │
+│   │   • IP data      │       │   • Cache        │               │
+│   │   • Threat feeds │       │   • Rate limits  │               │
+│   └──────────────────┘       └──────────────────┘               │
+│                                                                  │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │                    Data Files                             │  │
+│   │  /var/lib/beon-ipquality/mmdb/ipquality.mmdb             │  │
+│   │  /var/lib/beon-ipquality/geoip/GeoLite2-*.mmdb           │  │
+│   └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Service Management
+
+```bash
+# API Server
+sudo systemctl start beon-api      # Start
+sudo systemctl stop beon-api       # Stop
+sudo systemctl restart beon-api    # Restart
+sudo systemctl status beon-api     # Status
+sudo systemctl enable beon-api     # Enable on boot
+
+# Judge Node (optional)
+sudo systemctl start beon-judge
+sudo systemctl status beon-judge
+
+# View logs
+sudo journalctl -u beon-api -f                    # Live API logs
+tail -f /var/log/beon-ipquality/api.log          # API log file
+tail -f /var/log/beon-ipquality/ingestor.log     # Ingestor log
+```
+
+---
+
+## Directory Structure
+
+```
+/opt/beon-ipquality/
+├── bin/
+│   ├── api          # API server binary
+│   ├── judge        # Judge node binary
+│   ├── ingestor     # Feed ingestor binary
+│   └── compiler     # MMDB compiler binary
+├── configs/
+│   ├── config.yaml           # Main configuration
+│   ├── feeds.yaml            # Threat feed sources
+│   └── GeoIP.conf.example    # MaxMind config template
+├── scripts/
+│   ├── setup-domain.sh       # Domain configuration
+│   ├── update-geoip.sh       # GeoIP updater
+│   └── auto-update.sh        # Auto update script
+├── docs/
+│   └── *.md                  # Documentation
+└── .credentials              # Generated credentials (root only)
+
+/var/lib/beon-ipquality/
+├── mmdb/
+│   └── ipquality.mmdb        # Compiled IP database
+└── geoip/
+    ├── GeoLite2-City.mmdb    # MaxMind City DB
+    └── GeoLite2-ASN.mmdb     # MaxMind ASN DB
+
+/var/log/beon-ipquality/
+├── api.log
+├── api-error.log
+├── ingestor.log
+├── compiler.log
+└── judge.log
+```
+
+---
+
+## Configuration
+
+### Main Config (`/opt/beon-ipquality/configs/config.yaml`)
 
 ```yaml
 server:
   host: "127.0.0.1"
   port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
 
 database:
   host: "localhost"
   port: 5432
   user: "beon"
-  password: "your_secure_password"
+  password: "YOUR_DB_PASSWORD"
   name: "ipquality"
 
 redis:
@@ -101,218 +268,83 @@ redis:
   port: 6379
 
 api:
-  key: "your-32-char-minimum-api-key-here"
+  key: "YOUR_API_KEY"
   rate_limit: 1000
 ```
 
-### 3. MaxMind GeoIP
-
-Get a free license key from [MaxMind](https://www.maxmind.com/en/geolite2/signup):
+### View Credentials
 
 ```bash
-export MAXMIND_LICENSE_KEY='your_license_key'
-/opt/beon-ipquality/scripts/update-geoip.sh
+# View saved credentials
+sudo cat /opt/beon-ipquality/.credentials
 ```
 
-### 4. Initial Data Load
+---
+
+## Security
+
+### Firewall (UFW)
 
 ```bash
-# Run ingestor to fetch threat feeds
-sudo -u beon /opt/beon-ipquality/bin/ingestor
+# Check status
+sudo ufw status
 
-# Compile MMDB database
-sudo -u beon /opt/beon-ipquality/bin/compiler
+# Default rules installed:
+# - SSH (22)
+# - HTTP (80)
+# - HTTPS (443)
 ```
 
-### 5. Start Services
+### Fail2ban
 
 ```bash
-# Start API server
-sudo systemctl start beon-api
-sudo systemctl enable beon-api
+# Check status
+sudo fail2ban-client status
+sudo fail2ban-client status nginx-limit-req
 
-# Verify it's running
-sudo systemctl status beon-api
-curl http://localhost:8080/health
+# View banned IPs
+sudo fail2ban-client status sshd
 ```
 
-## SSL Configuration with Let's Encrypt
+### SSL Certificate Renewal
 
 ```bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx
+# Test renewal
+sudo certbot renew --dry-run
 
-# Get certificate (replace with your domain)
-sudo certbot --nginx -d api.yourdomain.com
-
-# Auto-renewal is configured automatically
+# Certificates auto-renew via cron
 ```
 
-## Architecture Overview
-
-```
-Internet
-    │
-    ▼
-┌─────────────────────────────────────────────────────┐
-│                    Ubuntu VPS                        │
-│                                                      │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │            Nginx (Port 80/443)                   │ │
-│  │  - SSL termination                               │ │
-│  │  - Rate limiting                                 │ │
-│  │  - Reverse proxy                                 │ │
-│  └──────────────────────┬──────────────────────────┘ │
-│                         │                             │
-│                         ▼                             │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │         BEON API (127.0.0.1:8080)                │ │
-│  │  - IP reputation checks                          │ │
-│  │  - MMDB lookups                                  │ │
-│  │  - Redis caching                                 │ │
-│  └──────────────────────┬──────────────────────────┘ │
-│                         │                             │
-│           ┌─────────────┴─────────────┐               │
-│           ▼                           ▼               │
-│  ┌─────────────────┐       ┌─────────────────┐       │
-│  │   PostgreSQL    │       │      Redis      │       │
-│  │   (Port 5432)   │       │   (Port 6379)   │       │
-│  └─────────────────┘       └─────────────────┘       │
-│                                                      │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │              Data Files                          │ │
-│  │  /var/lib/beon-ipquality/mmdb/ipquality.mmdb    │ │
-│  │  /var/lib/beon-ipquality/geoip/GeoLite2-*.mmdb  │ │
-│  └─────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
-```
-
-## Service Management
-
-```bash
-# API Server
-sudo systemctl start beon-api
-sudo systemctl stop beon-api
-sudo systemctl restart beon-api
-sudo systemctl status beon-api
-
-# Judge Node (optional)
-sudo systemctl start beon-judge
-sudo systemctl status beon-judge
-
-# View logs
-sudo journalctl -u beon-api -f
-tail -f /var/log/beon-ipquality/api.log
-```
+---
 
 ## Monitoring
 
 ### Health Check
+
 ```bash
-curl http://localhost:8080/health
+curl http://localhost/health
 ```
 
 ### Prometheus Metrics
+
 ```bash
 curl http://localhost:9100/metrics
 ```
 
 ### System Resources
+
 ```bash
-htop
-free -h
-df -h
+htop                    # Process monitor
+free -h                 # Memory usage
+df -h                   # Disk usage
 ```
 
-## Security Hardening
-
-### 1. Firewall (UFW)
-```bash
-sudo ufw status
-# Should show: SSH, HTTP, HTTPS allowed
-```
-
-### 2. Fail2ban
-```bash
-sudo fail2ban-client status
-sudo fail2ban-client status nginx-limit-req
-```
-
-### 3. SSH Hardening
-```bash
-# Edit /etc/ssh/sshd_config
-PermitRootLogin no
-PasswordAuthentication no  # Use SSH keys only
-MaxAuthTries 3
-```
-
-### 4. Automatic Updates
-```bash
-sudo apt install unattended-upgrades
-sudo dpkg-reconfigure -plow unattended-upgrades
-```
-
-## Performance Tuning
-
-### 1. System Limits
-
-Edit `/etc/security/limits.conf`:
-```
-beon soft nofile 65535
-beon hard nofile 65535
-```
-
-### 2. Sysctl Tuning
-
-Edit `/etc/sysctl.d/99-beon.conf`:
-```
-net.core.somaxconn = 65535
-net.ipv4.tcp_max_syn_backlog = 65535
-net.core.netdev_max_backlog = 65535
-net.ipv4.tcp_tw_reuse = 1
-vm.swappiness = 10
-```
-
-Apply: `sudo sysctl --system`
-
-### 3. PostgreSQL Tuning
-
-Edit `/etc/postgresql/17/main/postgresql.conf`:
-```
-shared_buffers = 512MB
-effective_cache_size = 1536MB
-maintenance_work_mem = 128MB
-work_mem = 32MB
-max_connections = 100
-```
-
-### 4. Redis Tuning
-
-Edit `/etc/redis/redis.conf`:
-```
-maxmemory 512mb
-maxmemory-policy allkeys-lru
-```
-
-## Backup Strategy
-
-### Database Backup
-```bash
-# Manual backup
-pg_dump -U beon ipquality > backup.sql
-
-# Automated daily backup (add to cron)
-0 2 * * * pg_dump -U beon ipquality | gzip > /backup/ipquality_$(date +\%Y\%m\%d).sql.gz
-```
-
-### MMDB Backup
-```bash
-cp /var/lib/beon-ipquality/mmdb/ipquality.mmdb /backup/
-```
+---
 
 ## Troubleshooting
 
 ### Service Won't Start
+
 ```bash
 # Check logs
 sudo journalctl -u beon-api --no-pager -n 50
@@ -322,8 +354,9 @@ sudo journalctl -u beon-api --no-pager -n 50
 ```
 
 ### Database Connection Issues
+
 ```bash
-# Test PostgreSQL connection
+# Test PostgreSQL
 psql -h localhost -U beon -d ipquality -c "SELECT 1"
 
 # Check PostgreSQL status
@@ -331,51 +364,51 @@ sudo systemctl status postgresql
 ```
 
 ### High Memory Usage
+
 ```bash
-# Check what's using memory
+# Check processes
 ps aux --sort=-%mem | head -10
 
 # Redis memory
 redis-cli INFO memory
-
-# PostgreSQL connections
-sudo -u postgres psql -c "SELECT count(*) FROM pg_stat_activity;"
 ```
 
-### Slow Queries
+---
+
+## Updating
+
+### Update BEON-IPQuality
+
 ```bash
-# Check API latency
-curl -w "@curl-format.txt" http://localhost:8080/api/v1/check/8.8.8.8
-
-# Enable PostgreSQL slow query logging
-# Add to postgresql.conf:
-# log_min_duration_statement = 100
+# Run the update script
+/opt/beon-ipquality/scripts/auto-update.sh
 ```
 
-## Scaling Options
+### Update Threat Feeds Manually
 
-### Vertical Scaling
-- Upgrade VPS RAM/CPU
-- Add more PostgreSQL shared_buffers
-- Increase Redis maxmemory
+```bash
+sudo -u beon /opt/beon-ipquality/bin/ingestor -config /opt/beon-ipquality/configs/config.yaml
+sudo -u beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml
+curl -X POST http://localhost:8080/api/v1/reload
+```
 
-### Horizontal Scaling
-- Add read replicas for PostgreSQL
-- Use Redis Cluster
-- Load balancer with multiple API instances
-
-### CDN Integration
-- Cloudflare in front for DDoS protection
-- Cache responses at edge (be careful with cache invalidation)
+---
 
 ## Cost Estimation
 
-| Provider | Specs | Est. Monthly Cost |
-|----------|-------|-------------------|
-| DigitalOcean | 2GB RAM, 1 vCPU | $12 |
-| Linode | 2GB RAM, 1 vCPU | $12 |
-| Vultr | 2GB RAM, 1 vCPU | $10 |
-| Hetzner | 4GB RAM, 2 vCPU | €5 (~$5.50) |
-| AWS EC2 t3.small | 2GB RAM, 2 vCPU | ~$15 |
+| Provider | Specs | Monthly Cost |
+|----------|-------|--------------|
+| **Hetzner** | 4GB RAM, 2 vCPU | €5 (~$5.50) |
+| **Vultr** | 2GB RAM, 1 vCPU | $10 |
+| **DigitalOcean** | 2GB RAM, 1 vCPU | $12 |
+| **Linode** | 2GB RAM, 1 vCPU | $12 |
+| **AWS EC2 t3.small** | 2GB RAM, 2 vCPU | ~$15 |
 
-**Recommended**: Start with 2GB RAM, scale to 4-8GB based on traffic.
+**Recommendation**: Start with 2GB RAM, scale to 4-8GB based on traffic.
+
+---
+
+## Support
+
+- **Documentation**: `/opt/beon-ipquality/docs/`
+- **GitHub Issues**: [github.com/afuzapratama/BEON-IPQuality/issues](https://github.com/afuzapratama/BEON-IPQuality/issues)

@@ -43,27 +43,51 @@ BEON-IPQuality adalah sistem reputasi IP dan deteksi proksi berkinerja tinggi ya
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### One-Line Install (Ubuntu VPS)
 
-- Go 1.21+
-- PostgreSQL 15+ with ip4r extension
-- Docker & Docker Compose (optional)
+```bash
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
+```
 
-### Installation
+This will automatically:
+- Install Go 1.23, PostgreSQL 17, Redis 7, Nginx
+- Clone and build the project
+- Configure all services
+- Generate secure credentials
+
+### Post-Install Steps
+
+```bash
+# 1. Setup MaxMind GeoIP (get free key at maxmind.com)
+cp /opt/beon-ipquality/configs/GeoIP.conf.example /opt/beon-ipquality/configs/GeoIP.conf
+nano /opt/beon-ipquality/configs/GeoIP.conf
+/opt/beon-ipquality/scripts/update-geoip.sh
+
+# 2. Run initial data ingestion
+sudo -u beon /opt/beon-ipquality/bin/ingestor -config /opt/beon-ipquality/configs/config.yaml
+
+# 3. Compile MMDB
+sudo -u beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml
+
+# 4. Start the API
+sudo systemctl start beon-api && sudo systemctl enable beon-api
+
+# 5. Configure domain (recommended)
+sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com
+```
+
+### Manual Installation
 
 ```bash
 # Clone repository
-git clone https://github.com/lfrfrfr/beon-ipquality.git
-cd beon-ipquality
+git clone https://github.com/afuzapratama/BEON-IPQuality.git
+cd BEON-IPQuality
 
 # Install dependencies
 go mod download
 
-# Copy configuration
-cp configs/config.example.yaml configs/config.yaml
-
-# Run migrations
-make migrate
+# Build binaries
+make build
 
 # Start services
 make run-api
