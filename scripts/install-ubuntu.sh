@@ -459,17 +459,17 @@ main() {
     fi
 
     #===========================================================================
-    # STEP 2: Install Go 1.23
+    # STEP 2: Install Go 1.25
     #===========================================================================
-    print_step "2/12" "Installing Go 1.23"
+    print_step "2/12" "Installing Go 1.25"
     
-    GO_VERSION="1.23.4"
+    GO_VERSION="1.25.5"
     GO_TARBALL="go${GO_VERSION}.linux-amd64.tar.gz"
     GO_URL="https://go.dev/dl/${GO_TARBALL}"
     GO_MIRROR="https://dl.google.com/go/${GO_TARBALL}"
     
-    if command -v go &> /dev/null && go version | grep -q "go1.23"; then
-        print_success "Go 1.23 already installed"
+    if command -v go &> /dev/null && go version | grep -q "go1.25"; then
+        print_success "Go 1.25 already installed"
     else
         print_status "Downloading Go ${GO_VERSION}..."
         
@@ -561,6 +561,9 @@ GOENV
         
         print_success "Go ${GO_VERSION} installed successfully"
     fi
+    
+    # Verify Go version
+    print_status "Go version: $(go version)"
 
     #===========================================================================
     # STEP 3: Install PostgreSQL 17
