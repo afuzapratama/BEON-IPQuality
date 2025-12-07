@@ -851,9 +851,26 @@ NGINXCONF
     print_success "All binaries built successfully"
 
     #===========================================================================
-    # STEP 9: Create Configuration
+    # STEP 9: Run Database Migrations
     #===========================================================================
-    print_step "9/12" "Creating Configuration"
+    print_step "9/13" "Running Database Migrations"
+    
+    if [[ -f "$INSTALL_DIR/migrations/001_initial_schema.sql" ]]; then
+        print_status "Applying database schema..."
+        sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | head -20
+        print_success "Database schema applied"
+        
+        # Verify tables created
+        TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" | tr -d ' ')
+        print_status "Created $TABLE_COUNT tables in database"
+    else
+        print_warning "Migration file not found, skipping..."
+    fi
+
+    #===========================================================================
+    # STEP 10: Create Configuration
+    #===========================================================================
+    print_step "10/13" "Creating Configuration"
     
     cat > $INSTALL_DIR/configs/config.yaml << CONFIGYAML
 # BEON-IPQuality Configuration

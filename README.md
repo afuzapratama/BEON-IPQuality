@@ -109,25 +109,40 @@ curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/sc
 
 ### Post-Install Steps
 
+After installation completes, follow these steps **in order**:
+
 ```bash
-# 1. Run initial data ingestion (download threat feeds)
+# 1. Verify database tables exist (should show ~5+ tables)
+sudo -u postgres psql -d ipquality -c "\dt"
+
+# 2. Run initial data ingestion (downloads threat feeds - takes 2-5 minutes)
 sudo -u beon /opt/beon-ipquality/bin/ingestor \
   -config /opt/beon-ipquality/configs/config.yaml \
-  -feeds /opt/beon-ipquality/configs/feeds.yaml
+  -feeds /opt/beon-ipquality/configs/feeds.yaml 2>&1 | tee /tmp/ingestor.log
 
-# 2. Compile MMDB database
+# 3. Check data was ingested
+sudo -u postgres psql -d ipquality -c "SELECT COUNT(*) FROM ip_entries;"
+
+# 4. Compile MMDB database (creates fast-lookup binary file)
 sudo -u beon /opt/beon-ipquality/bin/compiler \
-  -config /opt/beon-ipquality/configs/config.yaml
+  -config /opt/beon-ipquality/configs/config.yaml 2>&1 | tee /tmp/compiler.log
 
-# 3. Start the API server
-sudo systemctl start beon-api && sudo systemctl enable beon-api
+# 5. Start the API server
+sudo systemctl start beon-api
+sudo systemctl enable beon-api
 
-# 4. Test the API
-curl -H "X-API-Key: YOUR_API_KEY" http://localhost:8080/api/v1/check/8.8.8.8
+# 6. Test the API
+curl http://localhost:8080/health
+curl -H "X-API-Key: YOUR_API_KEY" "http://localhost:8080/api/v1/check?ip=8.8.8.8"
 
-# 5. (Optional) Configure domain with SSL
+# 7. (Optional) Configure domain with SSL
 sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com
 ```
+
+> ⚠️ **Important**: If step 2 (ingestor) shows no output for more than 30 seconds, check if database tables exist (step 1). If tables are missing, run the migration manually:
+> ```bash
+> sudo -u postgres psql -d ipquality -f /opt/beon-ipquality/migrations/001_initial_schema.sql
+> ```
 
 ### Quick Fix (For Existing Installations)
 
