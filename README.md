@@ -248,4 +248,63 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 ---
 
-**Built with ❤️ using Go**
+## 🙏 Credits & Attributions
+
+### Data Sources & Threat Intelligence
+
+This project uses data from the following sources. We are grateful for their contributions to internet security:
+
+| Source | Description | License |
+|--------|-------------|---------|
+| [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) | IP Geolocation databases | [GeoLite2 EULA](https://www.maxmind.com/en/geolite2/eula) |
+| [Tor Project](https://www.torproject.org/) | Tor exit node list | Public Domain |
+| [Spamhaus](https://www.spamhaus.org/) | DROP/EDROP blocklists | Free for non-commercial use |
+| [Abuse.ch](https://abuse.ch/) | Feodo Tracker, SSL Blacklist | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| [FireHOL](https://github.com/firehol/blocklist-ipsets) | IP blocklist compilation | [GPL v3](https://www.gnu.org/licenses/gpl-3.0.html) |
+| [IPsum](https://github.com/stamparm/ipsum) | Daily threat intelligence | [MIT](https://opensource.org/licenses/MIT) |
+| [Emerging Threats](https://rules.emergingthreats.net/) | Compromised IP lists | Free for non-commercial use |
+| [Blocklist.de](https://www.blocklist.de/) | Attack IP blocklist | Free |
+| [CINS Army](https://cinsscore.com/) | CI Army bad IP list | Free |
+| [Greensnow](https://greensnow.co/) | Blocklist | Free |
+
+### Technologies & Libraries
+
+| Technology | Description | License |
+|------------|-------------|---------|
+| [Go](https://golang.org/) | Programming language | [BSD 3-Clause](https://opensource.org/licenses/BSD-3-Clause) |
+| [Fiber](https://github.com/gofiber/fiber) | Web framework | [MIT](https://opensource.org/licenses/MIT) |
+| [MaxMind DB](https://github.com/maxmind/mmdbwriter) | MMDB writer library | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| [oschwald/maxminddb-golang](https://github.com/oschwald/maxminddb-golang) | MMDB reader | [ISC](https://opensource.org/licenses/ISC) |
+| [PostgreSQL](https://www.postgresql.org/) | Database | [PostgreSQL License](https://www.postgresql.org/about/licence/) |
+| [Redis](https://redis.io/) | Cache & rate limiting | [BSD 3-Clause](https://opensource.org/licenses/BSD-3-Clause) |
+| [ClickHouse](https://clickhouse.com/) | Analytics database | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| [Prometheus](https://prometheus.io/) | Monitoring | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| [Grafana](https://grafana.com/) | Visualization | [AGPL v3](https://www.gnu.org/licenses/agpl-3.0.html) |
+| [Nginx](https://nginx.org/) | Reverse proxy | [BSD 2-Clause](https://opensource.org/licenses/BSD-2-Clause) |
+
+### Inspiration
+
+This project was inspired by:
+- [IPQualityScore](https://www.ipqualityscore.com/) - Commercial IP reputation service
+- [Proxycheck.io](https://proxycheck.io/) - Proxy detection API
+- [AbuseIPDB](https://www.abuseipdb.com/) - Community IP abuse database
+
+### Special Thanks
+
+- **MaxMind** for providing free GeoLite2 databases
+- **Tor Project** for maintaining public exit node lists  
+- **Abuse.ch** for their commitment to free threat intelligence
+- **FireHOL** for aggregating multiple blocklists
+- The open-source community for amazing tools and libraries
+
+---
+
+## ⚠️ Disclaimer
+
+This software is provided "as is" without warranty. The threat intelligence data is sourced from third parties and may contain false positives. Always verify results and use responsibly.
+
+**MaxMind Attribution**: This product includes GeoLite2 data created by MaxMind, available from [https://www.maxmind.com](https://www.maxmind.com).
+
+---
+
+**Built with ❤️ in Indonesia 🇮🇩**
