@@ -35,7 +35,12 @@ USER="beon"
 GROUP="beon"
 DB_PASSWORD=""
 API_KEY=""
+GRAFANA_PASSWORD=""
+CLICKHOUSE_PASSWORD=""
+REDIS_PASSWORD=""
+MAXMIND_LICENSE_KEY=""
 SKIP_DEPS=false
+INTERACTIVE=true
 
 #===============================================================================
 # Helper Functions
@@ -80,6 +85,200 @@ generate_api_key() {
 }
 
 #===============================================================================
+# Interactive Setup
+#===============================================================================
+interactive_setup() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  INTERACTIVE SETUP${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # MaxMind License Key (REQUIRED for GeoIP)
+    echo -e "${YELLOW}┌─────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${YELLOW}│  MaxMind GeoLite2 License Key (Required for GeoIP features)    │${NC}"
+    echo -e "${YELLOW}├─────────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${YELLOW}│  Get your FREE license key at:                                 │${NC}"
+    echo -e "${YELLOW}│  ${CYAN}https://www.maxmind.com/en/geolite2/signup${YELLOW}                     │${NC}"
+    echo -e "${YELLOW}│                                                                 │${NC}"
+    echo -e "${YELLOW}│  Steps:                                                         │${NC}"
+    echo -e "${YELLOW}│  1. Register for a free account                                │${NC}"
+    echo -e "${YELLOW}│  2. Go to Account → Manage License Keys                        │${NC}"
+    echo -e "${YELLOW}│  3. Generate a new license key                                 │${NC}"
+    echo -e "${YELLOW}└─────────────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
+        while true; do
+            echo -ne "${BLUE}Enter MaxMind License Key (or 'skip' to configure later): ${NC}"
+            read -r MAXMIND_LICENSE_KEY
+            
+            if [[ "$MAXMIND_LICENSE_KEY" == "skip" ]]; then
+                MAXMIND_LICENSE_KEY=""
+                print_warning "MaxMind key skipped - GeoIP features will be limited"
+                print_warning "You can add it later in: ${INSTALL_DIR}/configs/GeoIP.conf"
+                break
+            elif [[ ${#MAXMIND_LICENSE_KEY} -ge 10 ]]; then
+                print_success "MaxMind License Key configured"
+                break
+            else
+                print_error "Invalid key format. Please try again or type 'skip'"
+            fi
+        done
+    else
+        print_success "MaxMind License Key provided via argument"
+    fi
+    
+    echo ""
+    print_status "All other credentials will be auto-generated..."
+    echo ""
+}
+
+#===============================================================================
+# Generate All Credentials
+#===============================================================================
+generate_all_credentials() {
+    print_status "Generating secure credentials..."
+    
+    # Database password
+    if [[ -z "$DB_PASSWORD" ]]; then
+        DB_PASSWORD=$(generate_password)
+    fi
+    
+    # API Master Key
+    if [[ -z "$API_KEY" ]]; then
+        API_KEY=$(generate_api_key)
+    fi
+    
+    # Grafana password
+    if [[ -z "$GRAFANA_PASSWORD" ]]; then
+        GRAFANA_PASSWORD=$(generate_password)
+    fi
+    
+    # ClickHouse password
+    if [[ -z "$CLICKHOUSE_PASSWORD" ]]; then
+        CLICKHOUSE_PASSWORD=$(generate_password)
+    fi
+    
+    # Redis password (optional, leave empty for local-only)
+    if [[ -z "$REDIS_PASSWORD" ]]; then
+        REDIS_PASSWORD=""
+    fi
+    
+    print_success "All credentials generated"
+}
+
+#===============================================================================
+# Save Credentials to File
+#===============================================================================
+save_credentials() {
+    local CREDS_FILE="${INSTALL_DIR}/credentials.txt"
+    
+    print_status "Saving credentials to ${CREDS_FILE}..."
+    
+    cat > "$CREDS_FILE" << EOF
+#===============================================================================
+# BEON-IPQuality Credentials
+# Generated: $(date '+%Y-%m-%d %H:%M:%S')
+# 
+# ⚠️  KEEP THIS FILE SECURE! Contains sensitive information.
+# ⚠️  Recommended: Move to secure location after noting credentials
+#===============================================================================
+
+# API Access
+API_MASTER_KEY=${API_KEY}
+
+# Database (PostgreSQL)
+POSTGRES_USER=beon
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=ipquality
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+
+# Grafana Dashboard
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
+GRAFANA_URL=http://localhost:3000
+
+# ClickHouse (if enabled)
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=${REDIS_PASSWORD:-"(no password - local only)"}
+
+# MaxMind GeoIP
+MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY:-"(not configured)"}
+
+# Service URLs
+API_URL=http://localhost:8080
+JUDGE_URL=http://localhost:8081
+
+#===============================================================================
+# Quick Test Commands
+#===============================================================================
+# Test API:
+#   curl -H "X-API-Key: ${API_KEY}" "http://localhost:8080/api/v1/check?ip=8.8.8.8"
+#
+# Access Grafana:
+#   http://YOUR_SERVER_IP:3000
+#   Login: admin / ${GRAFANA_PASSWORD}
+#===============================================================================
+EOF
+
+    # Secure the file
+    chmod 600 "$CREDS_FILE"
+    chown root:root "$CREDS_FILE"
+    
+    print_success "Credentials saved to ${CREDS_FILE}"
+}
+
+#===============================================================================
+# Create .env File
+#===============================================================================
+create_env_file() {
+    local ENV_FILE="${INSTALL_DIR}/.env"
+    
+    print_status "Creating environment file..."
+    
+    cat > "$ENV_FILE" << EOF
+# BEON-IPQuality Environment Configuration
+# Auto-generated: $(date '+%Y-%m-%d %H:%M:%S')
+
+# PostgreSQL
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_USER=beon
+POSTGRES_DB=ipquality
+
+# ClickHouse
+CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+
+# Redis
+REDIS_PASSWORD=${REDIS_PASSWORD}
+
+# Grafana
+GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
+
+# API Keys
+API_MASTER_KEY=${API_KEY}
+
+# MaxMind License Key
+MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+
+# Environment
+ENVIRONMENT=production
+LOG_LEVEL=info
+EOF
+
+    chmod 600 "$ENV_FILE"
+    chown ${USER}:${GROUP} "$ENV_FILE" 2>/dev/null || true
+    
+    print_success "Environment file created"
+}
+
+#===============================================================================
 # Parse Arguments
 #===============================================================================
 usage() {
@@ -91,19 +290,22 @@ Usage: $0 [OPTIONS]
 Options:
     --db-password PASSWORD    Set PostgreSQL password (auto-generated if not set)
     --api-key KEY             Set API key (auto-generated if not set)
+    --maxmind-key KEY         Set MaxMind license key (prompted if not set)
+    --grafana-password PASS   Set Grafana password (auto-generated if not set)
     --skip-deps               Skip installing system dependencies
+    --non-interactive         Skip interactive prompts (for automation)
     --branch BRANCH           GitHub branch to use (default: main)
     -h, --help                Show this help message
 
 Examples:
-    # One-line install (recommended)
+    # One-line install (recommended - interactive)
     curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash
 
-    # With custom password
-    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash -s -- --db-password "MySecurePass123"
+    # With MaxMind key (skip prompt)
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash -s -- --maxmind-key "YOUR_KEY"
 
-    # Local execution
-    sudo ./install-ubuntu.sh --db-password "MySecurePass123" --api-key "myapikey123456789012345678901234"
+    # Fully automated (non-interactive)
+    sudo ./install-ubuntu.sh --maxmind-key "YOUR_KEY" --non-interactive
 
 EOF
     exit 0
@@ -119,8 +321,20 @@ while [[ $# -gt 0 ]]; do
             API_KEY="$2"
             shift 2
             ;;
+        --maxmind-key)
+            MAXMIND_LICENSE_KEY="$2"
+            shift 2
+            ;;
+        --grafana-password)
+            GRAFANA_PASSWORD="$2"
+            shift 2
+            ;;
         --skip-deps)
             SKIP_DEPS=true
+            shift
+            ;;
+        --non-interactive)
+            INTERACTIVE=false
             shift
             ;;
         --branch)
@@ -190,16 +404,13 @@ main() {
     check_os
     check_resources
     
-    # Generate credentials if not provided
-    if [[ -z "$DB_PASSWORD" ]]; then
-        DB_PASSWORD=$(generate_password)
-        print_status "Generated database password"
+    # Interactive setup for MaxMind key
+    if [[ "$INTERACTIVE" = true ]]; then
+        interactive_setup
     fi
     
-    if [[ -z "$API_KEY" ]]; then
-        API_KEY=$(generate_api_key)
-        print_status "Generated API key"
-    fi
+    # Generate all credentials
+    generate_all_credentials
     
     echo ""
     echo -e "${YELLOW}Installation will begin with these settings:${NC}"
@@ -207,6 +418,7 @@ main() {
     echo -e "  Data directory:    ${CYAN}$DATA_DIR${NC}"
     echo -e "  Log directory:     ${CYAN}$LOG_DIR${NC}"
     echo -e "  Service user:      ${CYAN}$USER${NC}"
+    echo -e "  MaxMind Key:       ${CYAN}${MAXMIND_LICENSE_KEY:-(not configured)}${NC}"
     echo ""
 
     #===========================================================================
@@ -242,11 +454,80 @@ main() {
     print_step "2/12" "Installing Go 1.23"
     
     GO_VERSION="1.23.4"
+    GO_TARBALL="go${GO_VERSION}.linux-amd64.tar.gz"
+    GO_URL="https://go.dev/dl/${GO_TARBALL}"
+    GO_MIRROR="https://dl.google.com/go/${GO_TARBALL}"
+    
     if command -v go &> /dev/null && go version | grep -q "go1.23"; then
         print_success "Go 1.23 already installed"
     else
         print_status "Downloading Go ${GO_VERSION}..."
-        wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
+        
+        # Remove any existing download
+        rm -f /tmp/go.tar.gz
+        
+        # Try download with IPv4 only, retry, and timeout
+        DOWNLOAD_SUCCESS=false
+        
+        # Method 1: Try primary URL with wget (IPv4 only)
+        if ! $DOWNLOAD_SUCCESS && command -v wget &> /dev/null; then
+            print_status "Trying go.dev with wget (IPv4)..."
+            if wget -4 --timeout=120 --tries=3 --retry-connrefused --waitretry=5 \
+                -q --show-progress -O /tmp/go.tar.gz "$GO_URL" 2>/dev/null; then
+                DOWNLOAD_SUCCESS=true
+                print_status "Downloaded from go.dev"
+            fi
+        fi
+        
+        # Method 2: Try Google mirror with wget (IPv4 only)
+        if ! $DOWNLOAD_SUCCESS && command -v wget &> /dev/null; then
+            print_status "Trying Google mirror with wget (IPv4)..."
+            rm -f /tmp/go.tar.gz
+            if wget -4 --timeout=120 --tries=3 --retry-connrefused --waitretry=5 \
+                -q --show-progress -O /tmp/go.tar.gz "$GO_MIRROR" 2>/dev/null; then
+                DOWNLOAD_SUCCESS=true
+                print_status "Downloaded from Google mirror"
+            fi
+        fi
+        
+        # Method 3: Try with curl (IPv4 only)
+        if ! $DOWNLOAD_SUCCESS && command -v curl &> /dev/null; then
+            print_status "Trying with curl (IPv4)..."
+            rm -f /tmp/go.tar.gz
+            if curl -4 --retry 3 --retry-delay 5 --connect-timeout 60 --max-time 300 \
+                -fsSL -o /tmp/go.tar.gz "$GO_URL" 2>/dev/null; then
+                DOWNLOAD_SUCCESS=true
+                print_status "Downloaded with curl from go.dev"
+            fi
+        fi
+        
+        # Method 4: Try Google mirror with curl (IPv4 only)
+        if ! $DOWNLOAD_SUCCESS && command -v curl &> /dev/null; then
+            print_status "Trying Google mirror with curl (IPv4)..."
+            rm -f /tmp/go.tar.gz
+            if curl -4 --retry 3 --retry-delay 5 --connect-timeout 60 --max-time 300 \
+                -fsSL -o /tmp/go.tar.gz "$GO_MIRROR" 2>/dev/null; then
+                DOWNLOAD_SUCCESS=true
+                print_status "Downloaded with curl from Google mirror"
+            fi
+        fi
+        
+        # Check if download succeeded
+        if ! $DOWNLOAD_SUCCESS || [ ! -f /tmp/go.tar.gz ]; then
+            print_error "Failed to download Go ${GO_VERSION}"
+            print_error "Please check your internet connection and try again"
+            exit 1
+        fi
+        
+        # Verify file size (Go tarball should be > 50MB)
+        FILE_SIZE=$(stat -c%s /tmp/go.tar.gz 2>/dev/null || echo "0")
+        if [ "$FILE_SIZE" -lt 50000000 ]; then
+            print_error "Downloaded file is too small (${FILE_SIZE} bytes), download may be corrupted"
+            rm -f /tmp/go.tar.gz
+            exit 1
+        fi
+        
+        print_status "Installing Go ${GO_VERSION}..."
         rm -rf /usr/local/go
         tar -C /usr/local -xzf /tmp/go.tar.gz
         rm /tmp/go.tar.gz
@@ -262,7 +543,13 @@ GOENV
         export GOPATH=/opt/go
         export PATH=$PATH:$GOPATH/bin
         
-        print_success "Go ${GO_VERSION} installed"
+        # Verify installation
+        if ! command -v go &> /dev/null; then
+            print_error "Go installation failed - binary not found"
+            exit 1
+        fi
+        
+        print_success "Go ${GO_VERSION} installed successfully"
     fi
 
     #===========================================================================
@@ -275,7 +562,7 @@ GOENV
     else
         print_status "Adding PostgreSQL repository..."
         sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-        wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || true
+        wget -4 -q --timeout=60 --tries=3 -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || true
         
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-17 postgresql-contrib-17
@@ -308,7 +595,7 @@ EOSQL
         print_success "Redis already installed"
     else
         print_status "Adding Redis repository..."
-        curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg 2>/dev/null || true
+        curl -4 --retry 3 --connect-timeout 60 -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg 2>/dev/null || true
         echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
         
         apt-get update -qq
@@ -670,18 +957,29 @@ LOGROTATE
     apt-get clean
     
     #===========================================================================
-    # SAVE CREDENTIALS
+    # SAVE CREDENTIALS & CREATE .ENV
     #===========================================================================
-    cat > $INSTALL_DIR/.credentials << CREDS
-# BEON-IPQuality Credentials
-# Generated: $(date)
-# KEEP THIS FILE SECURE!
+    save_credentials
+    create_env_file
+    
+    # Configure GeoIP.conf if MaxMind key provided
+    if [[ -n "$MAXMIND_LICENSE_KEY" ]]; then
+        print_status "Configuring MaxMind GeoIP..."
+        cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
+# GeoIP.conf - MaxMind Configuration
+# Auto-generated during installation
 
-DATABASE_PASSWORD=${DB_PASSWORD}
-API_KEY=${API_KEY}
-CREDS
-    chmod 600 $INSTALL_DIR/.credentials
-    chown root:root $INSTALL_DIR/.credentials
+AccountID 0
+LicenseKey ${MAXMIND_LICENSE_KEY}
+EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
+
+DatabaseDirectory ${DATA_DIR}/mmdb
+LockFile ${DATA_DIR}/mmdb/.geoipupdate.lock
+GEOIPCONF
+        chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
+        chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
+        print_success "MaxMind GeoIP configured"
+    fi
     
     #===========================================================================
     # FINAL SUMMARY
@@ -692,22 +990,32 @@ CREDS
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  CREDENTIALS (SAVE THESE!)${NC}"
+    echo -e "${YELLOW}  🔑 API MASTER KEY (SAVE THIS!)${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  Database Password: ${GREEN}${DB_PASSWORD}${NC}"
-    echo -e "  API Key:           ${GREEN}${API_KEY}${NC}"
+    echo -e "  ${GREEN}${API_KEY}${NC}"
     echo ""
-    echo -e "  ${YELLOW}Credentials saved to: ${INSTALL_DIR}/.credentials${NC}"
+    echo -e "  ${YELLOW}⚠️  All credentials saved to: ${CYAN}${INSTALL_DIR}/credentials.txt${NC}"
+    echo -e "  ${YELLOW}⚠️  Environment config at:    ${CYAN}${INSTALL_DIR}/.env${NC}"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}  NEXT STEPS${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC} Setup MaxMind GeoIP (get free key at maxmind.com):"
-    echo -e "     ${CYAN}cp ${INSTALL_DIR}/configs/GeoIP.conf.example ${INSTALL_DIR}/configs/GeoIP.conf${NC}"
-    echo -e "     ${CYAN}nano ${INSTALL_DIR}/configs/GeoIP.conf${NC}"
-    echo -e "     ${CYAN}${INSTALL_DIR}/scripts/update-geoip.sh${NC}"
+    
+    # Check if MaxMind is configured
+    if [[ -n "$MAXMIND_LICENSE_KEY" ]]; then
+        echo -e "  ${GREEN}✓${NC} MaxMind GeoIP configured"
+        echo ""
+        echo -e "  ${GREEN}1.${NC} Download GeoIP databases:"
+        echo -e "     ${CYAN}sudo ${INSTALL_DIR}/scripts/update-geoip.sh${NC}"
+    else
+        echo -e "  ${YELLOW}!${NC} MaxMind GeoIP not configured (optional)"
+        echo ""
+        echo -e "  ${GREEN}1.${NC} Setup MaxMind GeoIP (get free key at maxmind.com):"
+        echo -e "     ${CYAN}nano ${INSTALL_DIR}/configs/GeoIP.conf${NC}"
+        echo -e "     ${CYAN}sudo ${INSTALL_DIR}/scripts/update-geoip.sh${NC}"
+    fi
     echo ""
     echo -e "  ${GREEN}2.${NC} Run initial data ingestion:"
     echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml${NC}"
@@ -729,16 +1037,15 @@ CREDS
     echo -e "  PostgreSQL: $(systemctl is-active postgresql)"
     echo -e "  Redis:      $(systemctl is-active redis-server)"
     echo -e "  Nginx:      $(systemctl is-active nginx)"
-    echo -e "  API:        $(systemctl is-active beon-api 2>/dev/null || echo 'not started')"
+    echo -e "  API:        $(systemctl is-active beon-api 2>/dev/null || echo 'not started yet')"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  DIRECTORIES${NC}"
+    echo -e "${YELLOW}  CREDENTIALS LOCATION${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  Install:  ${INSTALL_DIR}"
-    echo -e "  Data:     ${DATA_DIR}"
-    echo -e "  Logs:     ${LOG_DIR}"
-    echo -e "  Config:   ${INSTALL_DIR}/configs/config.yaml"
+    echo -e "  ${CYAN}cat ${INSTALL_DIR}/credentials.txt${NC}"
+    echo ""
+    echo -e "  Contains: API Key, Database Password, Grafana Password, etc."
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}  QUICK TEST${NC}"
@@ -746,7 +1053,7 @@ CREDS
     echo ""
     echo -e "  After starting the API, test with:"
     echo -e "  ${CYAN}curl http://localhost/health${NC}"
-    echo -e "  ${CYAN}curl \"http://localhost/api/v1/check?ip=8.8.8.8\"${NC}"
+    echo -e "  ${CYAN}curl -H \"X-API-Key: ${API_KEY}\" \"http://localhost/api/v1/check?ip=8.8.8.8\"${NC}"
     echo ""
     echo -e "${GREEN}Installation complete! 🚀${NC}"
     echo ""
