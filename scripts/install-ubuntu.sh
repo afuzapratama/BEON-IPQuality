@@ -939,33 +939,39 @@ ingestor:
   retry_delay: 30s
 
 api:
-  master_key: "${API_KEY}"
-  rate_limit:
-    enabled: true
-    requests_per_minute: 1000
-    burst: 100
+  auth_enabled: true
+  rate_limit: 1000
+  rate_limit_window: 60s
+  batch_enabled: true
+  batch_max_size: 100
   cors:
     enabled: true
-    allowed_origins:
+    allow_origins:
       - "*"
+    allow_methods:
+      - "GET"
+      - "POST"
+    allow_headers:
+      - "X-API-Key"
+      - "Content-Type"
 
 judge:
   enabled: false
   port: 8081
-  workers: 10
+  concurrency: 10
   timeout: 5s
-  proxy_check:
-    enabled: true
-    ports:
-      - 80
-      - 8080
-      - 3128
-      - 1080
+  scan_ports:
+    - 80
+    - 8080
+    - 3128
+    - 1080
+  scan_timeout: 3
+  scan_workers: 10
+  rate_limit: 100
 
 metrics:
   enabled: true
   path: "/metrics"
-  port: 9090
 
 health:
   enabled: true
