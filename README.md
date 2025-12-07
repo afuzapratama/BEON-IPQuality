@@ -43,25 +43,49 @@ BEON-IPQuality adalah sistem reputasi IP dan deteksi proksi berkinerja tinggi ya
 
 ## 🚀 Quick Start
 
-### One-Line Install (Ubuntu VPS)
+### One-Line Install (Ubuntu VPS) - Recommended
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
 ```
 
-This will automatically:
-- Install Go 1.23, PostgreSQL 17, Redis 7, Nginx
-- Clone and build the project
-- Configure all services
-- Generate secure credentials
+#### What Happens During Installation:
+
+1. **Interactive Setup** - You'll be prompted for MaxMind License Key (only manual input needed)
+2. **Auto-Install** - Go 1.23, PostgreSQL 17, Redis 7, Nginx
+3. **Auto-Generate** - All passwords & API keys are generated automatically
+4. **Auto-Configure** - All services configured and ready
+
+#### After Installation:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  🔑 API MASTER KEY (SAVE THIS!)                              │
+├──────────────────────────────────────────────────────────────┤
+│  a7Bk9mNpQrStUvWxYz12345678901234                            │
+│                                                               │
+│  ⚠️  All credentials saved to: /opt/beon-ipquality/credentials.txt
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Installation Options
+
+```bash
+# Interactive install (recommended)
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
+
+# With MaxMind key (skip prompt)
+curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash -s -- --maxmind-key "YOUR_LICENSE_KEY"
+
+# Fully automated (no prompts)
+curl -fsSL ... | sudo bash -s -- --maxmind-key "YOUR_KEY" --non-interactive
+```
 
 ### Post-Install Steps
 
 ```bash
-# 1. Setup MaxMind GeoIP (get free key at maxmind.com)
-cp /opt/beon-ipquality/configs/GeoIP.conf.example /opt/beon-ipquality/configs/GeoIP.conf
-nano /opt/beon-ipquality/configs/GeoIP.conf
-/opt/beon-ipquality/scripts/update-geoip.sh
+# 1. Download GeoIP databases (if MaxMind key was provided)
+sudo /opt/beon-ipquality/scripts/update-geoip.sh
 
 # 2. Run initial data ingestion
 sudo -u beon /opt/beon-ipquality/bin/ingestor -config /opt/beon-ipquality/configs/config.yaml
@@ -72,9 +96,23 @@ sudo -u beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/config
 # 4. Start the API
 sudo systemctl start beon-api && sudo systemctl enable beon-api
 
-# 5. Configure domain (recommended)
+# 5. Configure domain with SSL (recommended)
 sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com
 ```
+
+### View Your Credentials
+
+```bash
+# All passwords are saved here
+sudo cat /opt/beon-ipquality/credentials.txt
+```
+
+### Get MaxMind License Key (Free)
+
+1. Register at [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup)
+2. Go to **Account → Manage License Keys**
+3. Click **Generate new license key**
+4. Use this key during installation or add later to `/opt/beon-ipquality/configs/GeoIP.conf`
 
 ### Manual Installation
 
