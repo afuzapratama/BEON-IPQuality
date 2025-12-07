@@ -720,6 +720,12 @@ NGINXCONF
     export PATH=$PATH:/usr/local/go/bin
     export GOPATH=/opt/go
     export GO111MODULE=on
+    # IMPORTANT: Prevent Go from trying to download different toolchain version
+    export GOTOOLCHAIN=local
+    
+    print_status "Go environment:"
+    print_status "  GOTOOLCHAIN=local (prevent auto-upgrade)"
+    print_status "  $(go version)"
     
     # Run go mod tidy first to update dependencies
     print_status "Updating Go dependencies..."
