@@ -792,13 +792,15 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CRONINGEST
     
     # Cron job for Compiler (compile MMDB every 4 hours, 30 min after ingestor)
-    cat > /etc/cron.d/beon-compiler << 'CRONCOMPILE'
+    # After compile, triggers API hot-reload via endpoint
+    cat > /etc/cron.d/beon-compiler << CRONCOMPILE
 # BEON-IPQuality MMDB Compiler
 # Runs 30 minutes after ingestor to compile updated data to MMDB
+# Then triggers API hot-reload to load new MMDB without restart
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-30 */4 * * * beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml -oneshot >> /var/log/beon-ipquality/compiler.log 2>&1
+30 */4 * * * beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml -oneshot >> /var/log/beon-ipquality/compiler.log 2>&1 && curl -s -X POST -H "X-API-Key: ${API_KEY}" "http://localhost:8080/api/v1/reload" >> /var/log/beon-ipquality/compiler.log 2>&1
 CRONCOMPILE
     
     # Cron job for GeoIP update (weekly on Sunday at 3 AM)
