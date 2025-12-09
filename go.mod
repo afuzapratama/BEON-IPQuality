@@ -1,6 +1,6 @@
 module github.com/lfrfrfr/beon-ipquality
 
-go 1.21
+go 1.25.3
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.41.0

@@ -98,6 +98,48 @@ func (i *Ingestor) Stop() {
 	i.running = false
 }
 
+// RunOnce runs all feeds once and returns statistics (for --once mode)
+func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, totalStored int, err error) {
+	enabledFeeds := i.feedsConfig.GetEnabledFeeds()
+	totalFeeds = len(enabledFeeds)
+
+	// Results tracking with mutex for thread safety
+	var mu sync.Mutex
+	var errors []error
+
+	// Use semaphore for concurrency control
+	sem := make(chan struct{}, i.config.Ingestor.Concurrency)
+
+	for name, feed := range enabledFeeds {
+		sem <- struct{}{} // Acquire
+
+		i.wg.Add(1)
+		go func(feedName string, feedConfig config.FeedConfig) {
+			defer i.wg.Done()
+			defer func() { <-sem }() // Release
+
+			entries, stored, feedErr := i.processFeedWithStats(ctx, feedName, feedConfig)
+			
+			mu.Lock()
+			totalEntries += entries
+			totalStored += stored
+			if feedErr != nil {
+				errors = append(errors, feedErr)
+			}
+			mu.Unlock()
+		}(name, feed)
+	}
+
+	// Wait for all feeds to complete
+	i.wg.Wait()
+
+	if len(errors) > 0 {
+		err = fmt.Errorf("%d feed(s) had errors", len(errors))
+	}
+
+	return
+}
+
 // runAllFeeds runs all enabled feeds
 func (i *Ingestor) runAllFeeds(ctx context.Context) {
 	enabledFeeds := i.feedsConfig.GetEnabledFeeds()
@@ -152,6 +194,44 @@ func (i *Ingestor) processFeed(ctx context.Context, feedName string, feedConfig 
 	}
 
 	logger.Info(fmt.Sprintf("Completed feed %s: %d total entries in %v", feedName, totalEntries, time.Since(startTime)))
+}
+
+// processFeedWithStats processes a single feed and returns statistics
+func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, feedConfig config.FeedConfig) (totalEntries, totalStored int, err error) {
+	// Print progress to stdout for --once mode
+	fmt.Printf("\033[0;34m[*]\033[0m Processing feed: %s\n", feedName)
+	startTime := time.Now()
+
+	for _, source := range feedConfig.Sources {
+		select {
+		case <-ctx.Done():
+			return totalEntries, totalStored, ctx.Err()
+		default:
+		}
+
+		entries, fetchErr := i.fetchSource(ctx, source, feedConfig)
+		if fetchErr != nil {
+			fmt.Printf("\033[0;31m[✗]\033[0m   Source %s: %v\n", source.Name, fetchErr)
+			continue
+		}
+
+		totalEntries += len(entries)
+
+		// Store entries and get count
+		stored, storeErr := i.storeEntriesWithCount(entries)
+		if storeErr != nil {
+			fmt.Printf("\033[0;31m[✗]\033[0m   Source %s: store error: %v\n", source.Name, storeErr)
+			continue
+		}
+
+		totalStored += stored
+		fmt.Printf("\033[0;32m[✓]\033[0m   %s/%s: fetched %d, stored %d\n", feedName, source.Name, len(entries), stored)
+	}
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("\033[0;32m[✓]\033[0m Completed %s: %d entries in %v\n", feedName, totalEntries, elapsed.Round(time.Millisecond))
+	
+	return totalEntries, totalStored, nil
 }
 
 // fetchSource fetches and parses a single source
@@ -349,6 +429,77 @@ func (i *Ingestor) storeEntries(entries []models.FeedEntry) error {
 
 	logger.Info(fmt.Sprintf("Stored %d entries to database", totalInserted))
 	return nil
+}
+
+// storeEntriesWithCount stores parsed entries and returns count stored
+func (i *Ingestor) storeEntriesWithCount(entries []models.FeedEntry) (int, error) {
+	if len(entries) == 0 {
+		return 0, nil
+	}
+
+	// Convert FeedEntry to database entries
+	dbEntries := make([]database.IPReputationEntry, 0, len(entries))
+	now := time.Now()
+
+	for _, entry := range entries {
+		var ipStart, ipEnd string
+		var cidr *string
+
+		if entry.Prefix.IsValid() {
+			// It's a CIDR prefix
+			ipStart, ipEnd = database.IPRangeFromPrefix(entry.Prefix)
+			cidrStr := entry.Prefix.String()
+			cidr = &cidrStr
+		} else if entry.IP.IsValid() {
+			// It's a single IP
+			ipStart, ipEnd = database.IPRangeFromAddr(entry.IP)
+		} else {
+			continue
+		}
+
+		dbEntry := database.IPReputationEntry{
+			IPStart:    ipStart,
+			IPEnd:      ipEnd,
+			CIDR:       cidr,
+			Source:     entry.Source,
+			ThreatType: entry.ThreatType,
+			Confidence: entry.Confidence,
+			Weight:     entry.Weight,
+			FirstSeen:  now,
+			LastSeen:   now,
+		}
+
+		dbEntries = append(dbEntries, dbEntry)
+	}
+
+	if len(dbEntries) == 0 {
+		return 0, nil
+	}
+
+	// Store in batches
+	batchSize := 5000
+	totalInserted := 0
+
+	for start := 0; start < len(dbEntries); start += batchSize {
+		end := start + batchSize
+		if end > len(dbEntries) {
+			end = len(dbEntries)
+		}
+
+		batch := dbEntries[start:end]
+
+		if i.db != nil {
+			inserted, err := i.db.InsertReputationBatch(context.Background(), batch)
+			if err != nil {
+				return totalInserted, fmt.Errorf("batch insert failed: %w", err)
+			}
+			totalInserted += inserted
+		} else {
+			totalInserted += len(batch)
+		}
+	}
+
+	return totalInserted, nil
 }
 
 // FetchFeed manually fetches a single feed

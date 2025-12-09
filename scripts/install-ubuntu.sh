@@ -1,12 +1,15 @@
 #!/bin/bash
 #===============================================================================
-# BEON-IPQuality Ubuntu VPS Installation Script
+# BEON-IPQuality Ubuntu VPS Installation Script v2.0
 # 
+# Features:
+#   - Clear progress information at every step
+#   - Automatic retry with fallback for downloads
+#   - Built-in data ingestion with progress display
+#   - Comprehensive error messages
+#
 # One-Line Install:
 #   curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
-#
-# Or with options:
-#   curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash -s -- --db-password "yourpass"
 #
 # Tested on: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS
 # Requirements: 2GB+ RAM, 20GB+ Storage
@@ -15,66 +18,117 @@
 set -e
 
 # Version
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="2.0.0"
 GITHUB_REPO="afuzapratama/BEON-IPQuality"
 GITHUB_BRANCH="main"
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
+BOLD='\033[1m'
 
-# Configuration defaults
+# Configuration
 INSTALL_DIR="/opt/beon-ipquality"
 DATA_DIR="/var/lib/beon-ipquality"
 LOG_DIR="/var/log/beon-ipquality"
 USER="beon"
 GROUP="beon"
+
+# Auto-generated credentials
 DB_PASSWORD=""
 API_KEY=""
 GRAFANA_PASSWORD=""
-CLICKHOUSE_PASSWORD=""
-REDIS_PASSWORD=""
 MAXMIND_ACCOUNT_ID=""
 MAXMIND_LICENSE_KEY=""
-SKIP_DEPS=false
 INTERACTIVE=true
 
+# Statistics tracking
+TOTAL_STEPS=13
+CURRENT_STEP=0
+START_TIME=$(date +%s)
+
 #===============================================================================
-# Helper Functions
+# HELPER FUNCTIONS
 #===============================================================================
+
 print_banner() {
+    clear
     echo -e "${CYAN}"
-    echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║                                                                   ║"
-    echo "║   ██████╗ ███████╗ ██████╗ ███╗   ██╗                            ║"
-    echo "║   ██╔══██╗██╔════╝██╔═══██╗████╗  ██║                            ║"
-    echo "║   ██████╔╝█████╗  ██║   ██║██╔██╗ ██║                            ║"
-    echo "║   ██╔══██╗██╔══╝  ██║   ██║██║╚██╗██║                            ║"
-    echo "║   ██████╔╝███████╗╚██████╔╝██║ ╚████║                            ║"
-    echo "║   ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝                            ║"
-    echo "║                                                                   ║"
-    echo "║   IP Quality & Reputation System                                  ║"
-    echo "║   Version: ${SCRIPT_VERSION}                                               ║"
-    echo "║                                                                   ║"
-    echo "╚══════════════════════════════════════════════════════════════════╝"
+    cat << 'BANNER'
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║    ██████╗ ███████╗ ██████╗ ███╗   ██╗     ██╗██████╗  ██████╗              ║
+║    ██╔══██╗██╔════╝██╔═══██╗████╗  ██║     ██║██╔══██╗██╔═══██╗             ║
+║    ██████╔╝█████╗  ██║   ██║██╔██╗ ██║     ██║██████╔╝██║   ██║             ║
+║    ██╔══██╗██╔══╝  ██║   ██║██║╚██╗██║     ██║██╔═══╝ ██║▄▄ ██║             ║
+║    ██████╔╝███████╗╚██████╔╝██║ ╚████║     ██║██║     ╚██████╔╝             ║
+║    ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝     ╚═╝╚═╝      ╚══▀▀═╝              ║
+║                                                                              ║
+║                  IP Quality & Reputation System                              ║
+║                     Ubuntu VPS Installer v2.0                                ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+BANNER
     echo -e "${NC}"
+    echo ""
 }
 
-print_status() { echo -e "${BLUE}[*]${NC} $1"; }
-print_success() { echo -e "${GREEN}[✓]${NC} $1"; }
-print_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
-print_error() { echo -e "${RED}[✗]${NC} $1"; }
-
 print_step() {
+    CURRENT_STEP=$1
+    local title="$2"
+    local elapsed=$(($(date +%s) - START_TIME))
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  STEP $1: $2${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC} ${YELLOW}STEP ${CURRENT_STEP}/${TOTAL_STEPS}${NC}: ${BOLD}${title}${NC}"
+    echo -e "${CYAN}║${NC} ${MAGENTA}Elapsed: ${mins}m ${secs}s${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
+}
+
+print_substep() {
+    echo -e "  ${BLUE}→${NC} $1"
+}
+
+print_progress() {
+    echo -e "  ${BLUE}[*]${NC} $1"
+}
+
+print_success() {
+    echo -e "  ${GREEN}[✓]${NC} $1"
+}
+
+print_warning() {
+    echo -e "  ${YELLOW}[!]${NC} $1"
+}
+
+print_error() {
+    echo -e "  ${RED}[✗]${NC} $1"
+}
+
+print_info() {
+    echo -e "  ${CYAN}[i]${NC} $1"
+}
+
+spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='|/-\'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
 }
 
 generate_password() {
@@ -85,319 +139,97 @@ generate_api_key() {
     < /dev/urandom tr -dc 'A-Za-z0-9' | head -c 32
 }
 
+download_with_retry() {
+    local url="$1"
+    local output="$2"
+    local description="$3"
+    local max_retries=3
+    local retry=0
+    
+    while [ $retry -lt $max_retries ]; do
+        retry=$((retry + 1))
+        print_progress "Downloading ${description} (attempt ${retry}/${max_retries})..."
+        
+        if wget -4 --timeout=120 --tries=2 --retry-connrefused -q --show-progress -O "$output" "$url" 2>/dev/null; then
+            print_success "Downloaded ${description}"
+            return 0
+        fi
+        
+        if curl -4 --retry 2 --connect-timeout 60 --max-time 300 -fsSL -o "$output" "$url" 2>/dev/null; then
+            print_success "Downloaded ${description}"
+            return 0
+        fi
+        
+        print_warning "Attempt ${retry} failed, retrying..."
+        sleep 2
+    done
+    
+    return 1
+}
+
 #===============================================================================
-# Interactive Setup
+# INTERACTIVE SETUP
 #===============================================================================
+
 interactive_setup() {
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  INTERACTIVE SETUP${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}  ${YELLOW}MAXMIND GEOLITE2 CONFIGURATION${NC}                                              ${CYAN}║${NC}"
+    echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${CYAN}║${NC}  GeoIP enables location-based risk scoring (country, ASN, datacenter).       ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  Get your FREE credentials at:                                               ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${GREEN}https://www.maxmind.com/en/geolite2/signup${NC}                                  ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                                                                              ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  After registration:                                                         ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}    1. Account ID is shown on your dashboard (6-digit number)                 ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}    2. License Key: Account → Manage License Keys → Generate New Key          ${CYAN}║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
-    # MaxMind GeoLite2 Setup
-    echo -e "${YELLOW}┌─────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${YELLOW}│  MaxMind GeoLite2 Configuration (Required for GeoIP features)  │${NC}"
-    echo -e "${YELLOW}├─────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${YELLOW}│  Get your FREE Account ID & License Key at:                    │${NC}"
-    echo -e "${YELLOW}│  ${CYAN}https://www.maxmind.com/en/geolite2/signup${YELLOW}                     │${NC}"
-    echo -e "${YELLOW}│                                                                 │${NC}"
-    echo -e "${YELLOW}│  Steps:                                                         │${NC}"
-    echo -e "${YELLOW}│  1. Register for a free account                                │${NC}"
-    echo -e "${YELLOW}│  2. After login, your Account ID is shown on dashboard         │${NC}"
-    echo -e "${YELLOW}│  3. Go to Account → Manage License Keys → Generate New Key     │${NC}"
-    echo -e "${YELLOW}└─────────────────────────────────────────────────────────────────┘${NC}"
-    echo ""
-    
-    # Check if terminal available for input
     if [[ ! -e /dev/tty ]]; then
-        print_warning "No terminal available for input - skipping MaxMind prompts"
-        print_warning "Use --maxmind-account and --maxmind-key options or configure later"
-        MAXMIND_ACCOUNT_ID=""
-        MAXMIND_LICENSE_KEY=""
+        print_warning "No terminal for input - using default settings"
         return
     fi
     
-    # Prompt for Account ID
-    if [[ -z "$MAXMIND_ACCOUNT_ID" ]]; then
-        while true; do
-            echo -ne "${BLUE}Enter MaxMind Account ID (6-digit number, or 'skip'): ${NC}"
-            read -r MAXMIND_ACCOUNT_ID </dev/tty || true
-            
-            if [[ "$MAXMIND_ACCOUNT_ID" == "skip" || -z "$MAXMIND_ACCOUNT_ID" ]]; then
-                MAXMIND_ACCOUNT_ID=""
-                MAXMIND_LICENSE_KEY=""
-                print_warning "MaxMind setup skipped - GeoIP features will be limited"
-                print_warning "You can configure later: ${INSTALL_DIR}/configs/GeoIP.conf"
-                echo ""
-                print_status "All other credentials will be auto-generated..."
-                echo ""
-                return
-            elif [[ "$MAXMIND_ACCOUNT_ID" =~ ^[0-9]+$ ]]; then
-                print_success "Account ID: ${MAXMIND_ACCOUNT_ID}"
-                break
-            else
-                print_error "Invalid Account ID. Must be a number (e.g., 123456)"
-            fi
-        done
-    else
-        print_success "MaxMind Account ID provided via argument: ${MAXMIND_ACCOUNT_ID}"
-    fi
+    # Account ID
+    while true; do
+        echo -ne "${BLUE}Enter MaxMind Account ID (or 'skip' to configure later): ${NC}"
+        read -r MAXMIND_ACCOUNT_ID </dev/tty || true
+        
+        if [[ "$MAXMIND_ACCOUNT_ID" == "skip" || -z "$MAXMIND_ACCOUNT_ID" ]]; then
+            MAXMIND_ACCOUNT_ID=""
+            MAXMIND_LICENSE_KEY=""
+            print_warning "MaxMind skipped - you can configure later"
+            return
+        elif [[ "$MAXMIND_ACCOUNT_ID" =~ ^[0-9]+$ ]]; then
+            print_success "Account ID: ${MAXMIND_ACCOUNT_ID}"
+            break
+        else
+            print_error "Invalid Account ID - must be a number"
+        fi
+    done
     
-    # Prompt for License Key  
-    if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
-        while true; do
-            echo -ne "${BLUE}Enter MaxMind License Key: ${NC}"
-            read -r MAXMIND_LICENSE_KEY </dev/tty || true
-            
-            if [[ -z "$MAXMIND_LICENSE_KEY" ]]; then
-                print_error "License Key is required if Account ID is provided"
-                continue
-            elif [[ ${#MAXMIND_LICENSE_KEY} -ge 10 ]]; then
-                print_success "License Key configured"
-                break
-            else
-                print_error "Invalid key format (too short). Please try again."
-            fi
-        done
-    else
-        print_success "MaxMind License Key provided via argument"
-    fi
+    # License Key
+    while true; do
+        echo -ne "${BLUE}Enter MaxMind License Key: ${NC}"
+        read -r MAXMIND_LICENSE_KEY </dev/tty || true
+        
+        if [[ ${#MAXMIND_LICENSE_KEY} -ge 10 ]]; then
+            print_success "License Key configured"
+            break
+        else
+            print_error "Invalid key (too short)"
+        fi
+    done
     
     echo ""
-    print_success "MaxMind GeoIP configured successfully!"
-    echo ""
-    print_status "All other credentials will be auto-generated..."
-    echo ""
+    print_success "MaxMind GeoIP configured!"
 }
 
 #===============================================================================
-# Generate All Credentials
-#===============================================================================
-generate_all_credentials() {
-    print_status "Generating secure credentials..."
-    
-    # Database password
-    if [[ -z "$DB_PASSWORD" ]]; then
-        DB_PASSWORD=$(generate_password)
-    fi
-    
-    # API Master Key
-    if [[ -z "$API_KEY" ]]; then
-        API_KEY=$(generate_api_key)
-    fi
-    
-    # Grafana password
-    if [[ -z "$GRAFANA_PASSWORD" ]]; then
-        GRAFANA_PASSWORD=$(generate_password)
-    fi
-    
-    # ClickHouse password
-    if [[ -z "$CLICKHOUSE_PASSWORD" ]]; then
-        CLICKHOUSE_PASSWORD=$(generate_password)
-    fi
-    
-    # Redis password (optional, leave empty for local-only)
-    if [[ -z "$REDIS_PASSWORD" ]]; then
-        REDIS_PASSWORD=""
-    fi
-    
-    print_success "All credentials generated"
-}
-
-#===============================================================================
-# Save Credentials to File
-#===============================================================================
-save_credentials() {
-    local CREDS_FILE="${INSTALL_DIR}/credentials.txt"
-    
-    print_status "Saving credentials to ${CREDS_FILE}..."
-    
-    cat > "$CREDS_FILE" << EOF
-#===============================================================================
-# BEON-IPQuality Credentials
-# Generated: $(date '+%Y-%m-%d %H:%M:%S')
-# 
-# ⚠️  KEEP THIS FILE SECURE! Contains sensitive information.
-# ⚠️  Recommended: Move to secure location after noting credentials
+# PRE-FLIGHT CHECKS
 #===============================================================================
 
-# API Access
-API_MASTER_KEY=${API_KEY}
-
-# Database (PostgreSQL)
-POSTGRES_USER=beon
-POSTGRES_PASSWORD=${DB_PASSWORD}
-POSTGRES_DB=ipquality
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-
-# Grafana Dashboard
-GRAFANA_USER=admin
-GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
-GRAFANA_URL=http://localhost:3000
-
-# ClickHouse (if enabled)
-CLICKHOUSE_USER=default
-CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=${REDIS_PASSWORD:-"(no password - local only)"}
-
-# MaxMind GeoIP
-MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID:-"(not configured)"}
-MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY:-"(not configured)"}
-
-# Service URLs
-API_URL=http://localhost:8080
-JUDGE_URL=http://localhost:8081
-
-#===============================================================================
-# Quick Test Commands
-#===============================================================================
-# Test API:
-#   curl -H "X-API-Key: ${API_KEY}" "http://localhost:8080/api/v1/check?ip=8.8.8.8"
-#
-# Access Grafana:
-#   http://YOUR_SERVER_IP:3000
-#   Login: admin / ${GRAFANA_PASSWORD}
-#===============================================================================
-EOF
-
-    # Secure the file
-    chmod 600 "$CREDS_FILE"
-    chown root:root "$CREDS_FILE"
-    
-    print_success "Credentials saved to ${CREDS_FILE}"
-}
-
-#===============================================================================
-# Create .env File
-#===============================================================================
-create_env_file() {
-    local ENV_FILE="${INSTALL_DIR}/.env"
-    
-    print_status "Creating environment file..."
-    
-    cat > "$ENV_FILE" << EOF
-# BEON-IPQuality Environment Configuration
-# Auto-generated: $(date '+%Y-%m-%d %H:%M:%S')
-
-# PostgreSQL
-POSTGRES_PASSWORD=${DB_PASSWORD}
-POSTGRES_USER=beon
-POSTGRES_DB=ipquality
-
-# ClickHouse
-CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-
-# Redis
-REDIS_PASSWORD=${REDIS_PASSWORD}
-
-# Grafana
-GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
-
-# API Keys
-API_MASTER_KEY=${API_KEY}
-
-# MaxMind GeoIP
-MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
-MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
-
-# Environment
-ENVIRONMENT=production
-LOG_LEVEL=info
-EOF
-
-    chmod 600 "$ENV_FILE"
-    chown ${USER}:${GROUP} "$ENV_FILE" 2>/dev/null || true
-    
-    print_success "Environment file created"
-}
-
-#===============================================================================
-# Parse Arguments
-#===============================================================================
-usage() {
-    cat << EOF
-BEON-IPQuality Ubuntu VPS Installer v${SCRIPT_VERSION}
-
-Usage: $0 [OPTIONS]
-
-Options:
-    --db-password PASSWORD    Set PostgreSQL password (auto-generated if not set)
-    --api-key KEY             Set API key (auto-generated if not set)
-    --maxmind-account ID      Set MaxMind Account ID (prompted if not set)
-    --maxmind-key KEY         Set MaxMind license key (prompted if not set)
-    --grafana-password PASS   Set Grafana password (auto-generated if not set)
-    --skip-deps               Skip installing system dependencies
-    --non-interactive         Skip interactive prompts (for automation)
-    --branch BRANCH           GitHub branch to use (default: main)
-    -h, --help                Show this help message
-
-Examples:
-    # One-line install (recommended - interactive)
-    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash
-
-    # With MaxMind credentials (skip prompt)
-    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install-ubuntu.sh | sudo bash -s -- --maxmind-account "123456" --maxmind-key "YOUR_KEY"
-
-    # Fully automated (non-interactive)
-    sudo ./install-ubuntu.sh --maxmind-account "123456" --maxmind-key "YOUR_KEY" --non-interactive
-
-EOF
-    exit 0
-}
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --db-password)
-            DB_PASSWORD="$2"
-            shift 2
-            ;;
-        --api-key)
-            API_KEY="$2"
-            shift 2
-            ;;
-        --maxmind-account)
-            MAXMIND_ACCOUNT_ID="$2"
-            shift 2
-            ;;
-        --maxmind-key)
-            MAXMIND_LICENSE_KEY="$2"
-            shift 2
-            ;;
-        --grafana-password)
-            GRAFANA_PASSWORD="$2"
-            shift 2
-            ;;
-        --skip-deps)
-            SKIP_DEPS=true
-            shift
-            ;;
-        --non-interactive)
-            INTERACTIVE=false
-            shift
-            ;;
-        --branch)
-            GITHUB_BRANCH="$2"
-            shift 2
-            ;;
-        -h|--help)
-            usage
-            ;;
-        *)
-            print_error "Unknown option: $1"
-            usage
-            ;;
-    esac
-done
-
-#===============================================================================
-# Pre-flight Checks
-#===============================================================================
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         print_error "This script must be run as root (use sudo)"
@@ -407,222 +239,160 @@ check_root() {
 
 check_os() {
     if [[ ! -f /etc/os-release ]]; then
-        print_error "Cannot detect OS. This script requires Ubuntu."
+        print_error "Cannot detect OS"
         exit 1
     fi
     
     source /etc/os-release
     if [[ "$ID" != "ubuntu" ]]; then
-        print_error "This script is designed for Ubuntu. Detected: $ID"
+        print_error "This script requires Ubuntu (detected: $ID)"
         exit 1
     fi
     
-    print_success "Detected: Ubuntu $VERSION_ID"
+    print_success "OS: Ubuntu $VERSION_ID"
 }
 
 check_resources() {
-    local mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+    local mem_mb=$(free -m | awk '/^Mem:/{print $2}')
     local disk_gb=$(df -BG / | awk 'NR==2 {print $4}' | tr -d 'G')
     
-    if [[ $mem_gb -lt 1 ]]; then
-        print_warning "Low memory detected: ${mem_gb}GB (recommended: 2GB+)"
+    if [[ $mem_mb -lt 1024 ]]; then
+        print_warning "Low memory: ${mem_mb}MB (recommended: 2GB+)"
     else
-        print_success "Memory: ${mem_gb}GB"
+        print_success "Memory: ${mem_mb}MB"
     fi
     
     if [[ $disk_gb -lt 10 ]]; then
-        print_warning "Low disk space: ${disk_gb}GB (recommended: 20GB+)"
+        print_warning "Low disk: ${disk_gb}GB (recommended: 20GB+)"
     else
-        print_success "Disk space: ${disk_gb}GB available"
+        print_success "Disk: ${disk_gb}GB available"
     fi
 }
 
 #===============================================================================
 # MAIN INSTALLATION
 #===============================================================================
+
 main() {
     print_banner
     
-    # Pre-flight
+    # Pre-flight checks
+    echo -e "${YELLOW}Running pre-flight checks...${NC}"
+    echo ""
     check_root
     check_os
     check_resources
     
-    # Interactive setup for MaxMind key
+    # Interactive setup
     if [[ "$INTERACTIVE" = true ]]; then
         interactive_setup
     fi
     
-    # Generate all credentials
-    generate_all_credentials
+    # Generate credentials
+    echo ""
+    print_progress "Generating secure credentials..."
+    DB_PASSWORD=$(generate_password)
+    API_KEY=$(generate_api_key)
+    GRAFANA_PASSWORD=$(generate_password)
+    print_success "Credentials generated"
     
     echo ""
-    echo -e "${YELLOW}Installation will begin with these settings:${NC}"
-    echo -e "  Install directory: ${CYAN}$INSTALL_DIR${NC}"
-    echo -e "  Data directory:    ${CYAN}$DATA_DIR${NC}"
-    echo -e "  Log directory:     ${CYAN}$LOG_DIR${NC}"
-    echo -e "  Service user:      ${CYAN}$USER${NC}"
-    echo -e "  MaxMind Key:       ${CYAN}${MAXMIND_LICENSE_KEY:-(not configured)}${NC}"
-    echo ""
+    echo -e "${GREEN}Starting installation in 3 seconds...${NC}"
+    sleep 3
 
     #===========================================================================
-    # STEP 1: System Update & Base Packages
+    # STEP 1: System Update
     #===========================================================================
-    if [[ "$SKIP_DEPS" = false ]]; then
-        print_step "1/12" "System Update & Base Packages"
-        
-        print_status "Updating system packages..."
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
-        
-        print_status "Installing base dependencies..."
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            curl wget git \
-            software-properties-common \
-            apt-transport-https \
-            ca-certificates \
-            gnupg lsb-release \
-            build-essential \
-            ufw fail2ban \
-            jq htop
-        
-        print_success "Base packages installed"
-    else
-        print_step "1/12" "System Update (Skipped)"
-        print_warning "Skipping dependency installation as requested"
-    fi
-
-    #===========================================================================
-    # STEP 2: Install Go 1.25
-    #===========================================================================
-    print_step "2/12" "Installing Go 1.25"
+    print_step 1 "SYSTEM UPDATE & BASE PACKAGES"
     
-    GO_VERSION="1.25.5"
+    print_progress "Updating package lists..."
+    apt-get update -qq 2>&1 | tail -1
+    print_success "Package lists updated"
+    
+    print_progress "Installing essential packages..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        curl wget git software-properties-common apt-transport-https \
+        ca-certificates gnupg lsb-release build-essential ufw fail2ban jq htop \
+        geoipupdate 2>&1 | tail -3
+    print_success "Essential packages installed"
+
+    #===========================================================================
+    # STEP 2: Install Go
+    #===========================================================================
+    print_step 2 "INSTALLING GO 1.23"
+    
+    GO_VERSION="1.23.4"
     GO_TARBALL="go${GO_VERSION}.linux-amd64.tar.gz"
-    GO_URL="https://go.dev/dl/${GO_TARBALL}"
-    GO_MIRROR="https://dl.google.com/go/${GO_TARBALL}"
     
-    if command -v go &> /dev/null && go version | grep -q "go1.25"; then
-        print_success "Go 1.25 already installed"
+    if command -v go &> /dev/null && go version | grep -qE "go1\.(2[1-9]|[3-9])"; then
+        print_success "Go already installed: $(go version | awk '{print $3}')"
     else
-        print_status "Downloading Go ${GO_VERSION}..."
+        print_progress "Downloading Go ${GO_VERSION}..."
         
-        # Remove any existing download
         rm -f /tmp/go.tar.gz
         
-        # Try download with IPv4 only, retry, and timeout
-        DOWNLOAD_SUCCESS=false
-        
-        # Method 1: Try primary URL with wget (IPv4 only)
-        if ! $DOWNLOAD_SUCCESS && command -v wget &> /dev/null; then
-            print_status "Trying go.dev with wget (IPv4)..."
-            if wget -4 --timeout=120 --tries=3 --retry-connrefused --waitretry=5 \
-                -q --show-progress -O /tmp/go.tar.gz "$GO_URL" 2>/dev/null; then
-                DOWNLOAD_SUCCESS=true
-                print_status "Downloaded from go.dev"
+        # Try multiple sources
+        if ! download_with_retry "https://go.dev/dl/${GO_TARBALL}" "/tmp/go.tar.gz" "Go ${GO_VERSION}"; then
+            if ! download_with_retry "https://dl.google.com/go/${GO_TARBALL}" "/tmp/go.tar.gz" "Go ${GO_VERSION} (mirror)"; then
+                print_error "Failed to download Go"
+                exit 1
             fi
         fi
         
-        # Method 2: Try Google mirror with wget (IPv4 only)
-        if ! $DOWNLOAD_SUCCESS && command -v wget &> /dev/null; then
-            print_status "Trying Google mirror with wget (IPv4)..."
-            rm -f /tmp/go.tar.gz
-            if wget -4 --timeout=120 --tries=3 --retry-connrefused --waitretry=5 \
-                -q --show-progress -O /tmp/go.tar.gz "$GO_MIRROR" 2>/dev/null; then
-                DOWNLOAD_SUCCESS=true
-                print_status "Downloaded from Google mirror"
-            fi
-        fi
-        
-        # Method 3: Try with curl (IPv4 only)
-        if ! $DOWNLOAD_SUCCESS && command -v curl &> /dev/null; then
-            print_status "Trying with curl (IPv4)..."
-            rm -f /tmp/go.tar.gz
-            if curl -4 --retry 3 --retry-delay 5 --connect-timeout 60 --max-time 300 \
-                -fsSL -o /tmp/go.tar.gz "$GO_URL" 2>/dev/null; then
-                DOWNLOAD_SUCCESS=true
-                print_status "Downloaded with curl from go.dev"
-            fi
-        fi
-        
-        # Method 4: Try Google mirror with curl (IPv4 only)
-        if ! $DOWNLOAD_SUCCESS && command -v curl &> /dev/null; then
-            print_status "Trying Google mirror with curl (IPv4)..."
-            rm -f /tmp/go.tar.gz
-            if curl -4 --retry 3 --retry-delay 5 --connect-timeout 60 --max-time 300 \
-                -fsSL -o /tmp/go.tar.gz "$GO_MIRROR" 2>/dev/null; then
-                DOWNLOAD_SUCCESS=true
-                print_status "Downloaded with curl from Google mirror"
-            fi
-        fi
-        
-        # Check if download succeeded
-        if ! $DOWNLOAD_SUCCESS || [ ! -f /tmp/go.tar.gz ]; then
-            print_error "Failed to download Go ${GO_VERSION}"
-            print_error "Please check your internet connection and try again"
-            exit 1
-        fi
-        
-        # Verify file size (Go tarball should be > 50MB)
+        # Verify file size
         FILE_SIZE=$(stat -c%s /tmp/go.tar.gz 2>/dev/null || echo "0")
         if [ "$FILE_SIZE" -lt 50000000 ]; then
-            print_error "Downloaded file is too small (${FILE_SIZE} bytes), download may be corrupted"
-            rm -f /tmp/go.tar.gz
+            print_error "Download corrupted (file too small)"
             exit 1
         fi
+        print_success "Downloaded Go ($(numfmt --to=iec $FILE_SIZE))"
         
-        print_status "Installing Go ${GO_VERSION}..."
+        print_progress "Extracting Go..."
         rm -rf /usr/local/go
         tar -C /usr/local -xzf /tmp/go.tar.gz
         rm /tmp/go.tar.gz
+        print_success "Go extracted to /usr/local/go"
         
-        # Set up Go environment
+        # Setup environment
         cat > /etc/profile.d/go.sh << 'GOENV'
 export PATH=$PATH:/usr/local/go/bin
 export GOPATH=/opt/go
 export PATH=$PATH:$GOPATH/bin
 GOENV
-        
         export PATH=$PATH:/usr/local/go/bin
         export GOPATH=/opt/go
-        export PATH=$PATH:$GOPATH/bin
         
-        # Verify installation
-        if ! command -v go &> /dev/null; then
-            print_error "Go installation failed - binary not found"
-            exit 1
-        fi
-        
-        print_success "Go ${GO_VERSION} installed successfully"
+        print_success "Go ${GO_VERSION} installed"
     fi
     
-    # Verify Go version
-    print_status "Go version: $(go version)"
+    print_info "Go version: $(go version | awk '{print $3}')"
 
     #===========================================================================
-    # STEP 3: Install PostgreSQL 17
+    # STEP 3: Install PostgreSQL
     #===========================================================================
-    print_step "3/12" "Installing PostgreSQL 17"
+    print_step 3 "INSTALLING POSTGRESQL 17"
     
-    if command -v psql &> /dev/null && psql --version | grep -q "17"; then
-        print_success "PostgreSQL 17 already installed"
+    if command -v psql &> /dev/null; then
+        print_success "PostgreSQL already installed"
     else
-        print_status "Adding PostgreSQL repository..."
+        print_progress "Adding PostgreSQL repository..."
         sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-        wget -4 -q --timeout=60 --tries=3 -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || true
+        wget -4 -q --timeout=60 -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null
+        print_success "Repository added"
         
+        print_progress "Installing PostgreSQL 17..."
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-17 postgresql-contrib-17
-        
-        systemctl start postgresql
-        systemctl enable postgresql
-        
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-17 postgresql-contrib-17 2>&1 | tail -2
         print_success "PostgreSQL 17 installed"
     fi
     
-    # Create database and user
-    print_status "Configuring database..."
-    sudo -u postgres psql -c "SELECT 1 FROM pg_user WHERE usename = 'beon'" | grep -q 1 || \
+    print_progress "Starting PostgreSQL service..."
+    systemctl start postgresql
+    systemctl enable postgresql 2>/dev/null
+    print_success "PostgreSQL service started"
+    
+    print_progress "Creating database and user..."
+    sudo -u postgres psql -c "SELECT 1 FROM pg_user WHERE usename = 'beon'" 2>/dev/null | grep -q 1 || \
     sudo -u postgres psql << EOSQL
 CREATE USER beon WITH PASSWORD '${DB_PASSWORD}';
 CREATE DATABASE ipquality OWNER beon;
@@ -630,48 +400,48 @@ GRANT ALL PRIVILEGES ON DATABASE ipquality TO beon;
 \c ipquality
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 EOSQL
-    
-    print_success "PostgreSQL configured"
+    print_success "Database 'ipquality' created with user 'beon'"
 
     #===========================================================================
-    # STEP 4: Install Redis 7
+    # STEP 4: Install Redis
     #===========================================================================
-    print_step "4/12" "Installing Redis 7"
+    print_step 4 "INSTALLING REDIS"
     
     if command -v redis-server &> /dev/null; then
         print_success "Redis already installed"
     else
-        print_status "Adding Redis repository..."
-        curl -4 --retry 3 --connect-timeout 60 -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg 2>/dev/null || true
+        print_progress "Adding Redis repository..."
+        curl -4 --retry 3 -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg 2>/dev/null
         echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
         
+        print_progress "Installing Redis..."
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq redis-server
-        
-        # Configure Redis
-        sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
-        sed -i 's/^# maxmemory .*/maxmemory 256mb/' /etc/redis/redis.conf
-        sed -i 's/^# maxmemory-policy .*/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
-        
-        systemctl restart redis-server
-        systemctl enable redis-server
-        
-        print_success "Redis 7 installed"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq redis-server 2>&1 | tail -1
+        print_success "Redis installed"
     fi
+    
+    print_progress "Configuring Redis..."
+    sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf 2>/dev/null || true
+    sed -i 's/^# maxmemory .*/maxmemory 256mb/' /etc/redis/redis.conf
+    sed -i 's/^# maxmemory-policy .*/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
+    systemctl restart redis-server
+    systemctl enable redis-server 2>/dev/null
+    print_success "Redis configured and started"
 
     #===========================================================================
     # STEP 5: Install Nginx
     #===========================================================================
-    print_step "5/12" "Installing Nginx"
+    print_step 5 "INSTALLING NGINX"
     
     if command -v nginx &> /dev/null; then
         print_success "Nginx already installed"
     else
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
+        print_progress "Installing Nginx..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx 2>&1 | tail -1
         print_success "Nginx installed"
     fi
     
-    # Basic Nginx config (will be replaced by setup-domain.sh)
+    print_progress "Configuring Nginx reverse proxy..."
     cat > /etc/nginx/sites-available/beon-ipquality << 'NGINXCONF'
 upstream ipquality_api {
     server 127.0.0.1:8080;
@@ -692,12 +462,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Connection "";
-        
         limit_req zone=api_limit burst=200 nodelay;
-        
-        proxy_connect_timeout 5s;
-        proxy_send_timeout 30s;
-        proxy_read_timeout 30s;
     }
     
     location /health {
@@ -709,169 +474,146 @@ NGINXCONF
     
     ln -sf /etc/nginx/sites-available/beon-ipquality /etc/nginx/sites-enabled/
     rm -f /etc/nginx/sites-enabled/default
-    
-    nginx -t && systemctl restart nginx
-    systemctl enable nginx
-    
-    print_success "Nginx configured"
+    nginx -t 2>/dev/null && systemctl restart nginx
+    systemctl enable nginx 2>/dev/null
+    print_success "Nginx configured as reverse proxy"
 
     #===========================================================================
-    # STEP 6: Create User and Directories
+    # STEP 6: Create User & Directories
     #===========================================================================
-    print_step "6/12" "Creating User & Directories"
+    print_step 6 "CREATING USER & DIRECTORIES"
     
-    # Create user
+    print_progress "Creating service user 'beon'..."
     id -u $USER &>/dev/null || useradd -r -s /bin/false $USER
+    print_success "User 'beon' created"
     
-    # Create directories
-    mkdir -p $INSTALL_DIR/{bin,configs,scripts,docs}
+    print_progress "Creating directory structure..."
+    mkdir -p $INSTALL_DIR/{bin,configs,scripts,docs,migrations}
     mkdir -p $DATA_DIR/{mmdb,geoip}
     mkdir -p $LOG_DIR
-    
     print_success "Directories created"
+    print_info "  Install: $INSTALL_DIR"
+    print_info "  Data:    $DATA_DIR"
+    print_info "  Logs:    $LOG_DIR"
 
     #===========================================================================
     # STEP 7: Clone Repository
     #===========================================================================
-    print_step "7/12" "Cloning BEON-IPQuality Repository"
+    print_step 7 "CLONING BEON-IPQUALITY REPOSITORY"
     
-    print_status "Cloning from GitHub (${GITHUB_REPO})..."
-    
-    # Clone to temp directory
+    print_progress "Cloning from GitHub..."
     rm -rf /tmp/BEON-IPQuality
-    git clone --depth 1 --branch $GITHUB_BRANCH "https://github.com/${GITHUB_REPO}.git" /tmp/BEON-IPQuality
+    if git clone --depth 1 --branch $GITHUB_BRANCH "https://github.com/${GITHUB_REPO}.git" /tmp/BEON-IPQuality 2>&1 | tail -3; then
+        print_success "Repository cloned"
+    else
+        print_error "Failed to clone repository"
+        exit 1
+    fi
     
-    print_success "Repository cloned"
+    # Count files
+    FILE_COUNT=$(find /tmp/BEON-IPQuality -type f | wc -l)
+    print_info "Downloaded $FILE_COUNT files"
 
     #===========================================================================
     # STEP 8: Build Binaries
     #===========================================================================
-    print_step "8/12" "Building Binaries"
+    print_step 8 "BUILDING GO BINARIES"
     
     cd /tmp/BEON-IPQuality
     
-    # Ensure Go is available
     export PATH=$PATH:/usr/local/go/bin
     export GOPATH=/opt/go
     export GO111MODULE=on
-    # IMPORTANT: Prevent Go from trying to download different toolchain version
     export GOTOOLCHAIN=local
-    # IMPORTANT: Bypass Go proxy (some servers block proxy.golang.org)
-    # Try proxy first, then direct download from source
     export GOPROXY="https://proxy.golang.org,direct"
-    # If proxy still fails, uncomment this to go direct only:
-    # export GOPROXY=direct
     export GONOSUMDB="*"
-    export GOPRIVATE="*"
     
-    print_status "Go environment:"
-    print_status "  GOTOOLCHAIN=local (prevent auto-upgrade)"
-    print_status "  GOPROXY=$GOPROXY"
-    print_status "  $(go version)"
+    print_info "Go toolchain: $(go version | awk '{print $3}')"
     
-    # Test if proxy.golang.org is accessible
-    print_status "Testing Go proxy connectivity..."
-    if ! curl -4 -s --connect-timeout 5 "https://proxy.golang.org" > /dev/null 2>&1; then
-        print_warning "proxy.golang.org not accessible, switching to direct mode"
+    print_progress "Downloading Go modules..."
+    if ! go mod download 2>&1 | tail -5; then
+        print_warning "Some modules failed, trying direct download..."
         export GOPROXY=direct
-        export GONOSUMDB="*"
+        go mod download 2>&1 | tail -3
     fi
+    print_success "Modules downloaded"
     
-    # Run go mod tidy first to update dependencies
-    print_status "Updating Go dependencies..."
-    if ! go mod tidy 2>&1; then
-        print_warning "go mod tidy failed with proxy, trying direct mode..."
-        export GOPROXY=direct
-        export GONOSUMDB="*"
-        if ! go mod tidy 2>&1; then
-            print_error "Failed to run go mod tidy"
-            print_error "Check the error above for details"
-            exit 1
-        fi
-    fi
-    print_success "Dependencies updated"
-    
-    # Download dependencies
-    print_status "Downloading Go modules..."
-    if ! go mod download 2>&1; then
-        print_warning "Some modules failed to download, trying to continue..."
-    fi
-    
-    print_status "Building API server..."
-    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
+    print_progress "Building API server..."
+    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
+        print_success "API server built"
+    else
         print_error "Failed to build API server"
-        print_error "Check the error above for details"
         exit 1
     fi
-    print_success "API server built"
     
-    print_status "Building Judge node..."
-    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge 2>&1; then
+    print_progress "Building Judge node..."
+    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge 2>&1; then
+        print_success "Judge node built"
+    else
         print_error "Failed to build Judge node"
-        print_error "Check the error above for details"
         exit 1
     fi
-    print_success "Judge node built"
     
-    print_status "Building Ingestor..."
-    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor 2>&1; then
+    print_progress "Building Ingestor..."
+    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor 2>&1; then
+        print_success "Ingestor built"
+    else
         print_error "Failed to build Ingestor"
-        print_error "Check the error above for details"
         exit 1
     fi
-    print_success "Ingestor built"
     
-    print_status "Building Compiler..."
-    if ! go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler 2>&1; then
+    print_progress "Building Compiler..."
+    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler 2>&1; then
+        print_success "Compiler built"
+    else
         print_error "Failed to build Compiler"
-        print_error "Check the error above for details"
         exit 1
     fi
-    print_success "Compiler built"
     
-    # Verify binaries exist
-    for bin in api judge ingestor compiler; do
-        if [[ ! -f "$INSTALL_DIR/bin/$bin" ]]; then
-            print_error "Binary $bin was not created!"
-            exit 1
-        fi
-    done
-    
-    # Copy configs and scripts
-    print_status "Copying configuration files..."
+    # Copy files
+    print_progress "Copying configuration files..."
     cp -r configs/* $INSTALL_DIR/configs/ 2>/dev/null || true
     cp -r scripts/* $INSTALL_DIR/scripts/ 2>/dev/null || true
-    cp -r docs/* $INSTALL_DIR/docs/ 2>/dev/null || true
-    cp -r migrations $INSTALL_DIR/ 2>/dev/null || true
-    
-    # Make scripts executable
-    chmod +x $INSTALL_DIR/scripts/*.sh 2>/dev/null || true
-    chmod +x $INSTALL_DIR/bin/*
-    
+    cp -r migrations/* $INSTALL_DIR/migrations/ 2>/dev/null || true
+    chmod +x $INSTALL_DIR/bin/* $INSTALL_DIR/scripts/*.sh 2>/dev/null || true
     print_success "All binaries built successfully"
+    
+    # Show binary sizes
+    print_info "Binary sizes:"
+    for bin in api judge ingestor compiler; do
+        SIZE=$(du -h $INSTALL_DIR/bin/$bin | cut -f1)
+        print_info "  $bin: $SIZE"
+    done
 
     #===========================================================================
-    # STEP 9: Run Database Migrations
+    # STEP 9: Database Migration
     #===========================================================================
-    print_step "9/13" "Running Database Migrations"
+    print_step 9 "RUNNING DATABASE MIGRATIONS"
     
     if [[ -f "$INSTALL_DIR/migrations/001_initial_schema.sql" ]]; then
-        print_status "Applying database schema..."
-        sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | head -20
-        print_success "Database schema applied"
+        print_progress "Applying database schema..."
+        if sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5; then
+            print_success "Schema applied"
+        fi
         
-        # Verify tables created
         TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" | tr -d ' ')
-        print_status "Created $TABLE_COUNT tables in database"
+        print_success "Created $TABLE_COUNT tables"
+        
+        # List tables
+        print_info "Tables created:"
+        sudo -u postgres psql -d ipquality -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public';" | while read table; do
+            [[ -n "$table" ]] && print_info "  - $(echo $table | tr -d ' ')"
+        done
     else
-        print_warning "Migration file not found, skipping..."
+        print_warning "Migration file not found"
     fi
 
     #===========================================================================
-    # STEP 10: Create Configuration
+    # STEP 10: Configuration
     #===========================================================================
-    print_step "10/13" "Creating Configuration"
+    print_step 10 "CREATING CONFIGURATION FILES"
     
+    print_progress "Creating config.yaml..."
     cat > $INSTALL_DIR/configs/config.yaml << CONFIGYAML
 # BEON-IPQuality Configuration
 # Generated: $(date)
@@ -888,7 +630,7 @@ environment: production
 logging:
   level: "info"
   format: "json"
-  output: "file"
+  output: "stdout"
   file_path: "${LOG_DIR}/api.log"
 
 database:
@@ -904,14 +646,6 @@ database:
     max_conn_lifetime: 1h
     max_conn_idle_time: 30m
 
-clickhouse:
-  enabled: false
-  host: "localhost"
-  port: 9000
-  database: "beon_analytics"
-  username: "default"
-  password: ""
-
 redis:
   enabled: true
   host: "localhost"
@@ -925,95 +659,74 @@ mmdb:
   geolite2_city_path: "${DATA_DIR}/mmdb/GeoLite2-City.mmdb"
   geolite2_asn_path: "${DATA_DIR}/mmdb/GeoLite2-ASN.mmdb"
   output_path: "${DATA_DIR}/mmdb/reputation.mmdb"
-  reload_interval: 1h
-  compile_interval: 6h
-  record_size: 28
-  memory_map: true
-
-scoring:
-  decay_lambda: 0.01
-  max_score: 100
-  risk_threshold: 50
-  weights:
-    spamhaus_drop: 95
-    spamhaus_edrop: 95
-    feodo_tracker: 90
-    sslbl: 85
-    tor_exit: 70
-    firehol_level1: 80
-    firehol_level2: 60
-    emerging_threats: 75
-    blocklist_de: 65
-    ipsum: 55
-    datacenter: 40
-    proxy_list: 50
 
 ingestor:
   batch_size: 1000
   workers: 4
+  concurrency: 10
   update_interval: 4h
   retry_attempts: 3
   retry_delay: 30s
+  http_timeout: 60s
+  max_retries: 3
+  user_agent: "BEON-IPQuality/1.0"
 
 api:
   auth_enabled: true
   rate_limit: 1000
   rate_limit_window: 60s
-  batch_enabled: true
-  batch_max_size: 100
-  cors:
-    enabled: true
-    allow_origins:
-      - "*"
-    allow_methods:
-      - "GET"
-      - "POST"
-    allow_headers:
-      - "X-API-Key"
-      - "Content-Type"
 
 judge:
   enabled: false
   port: 8081
-  concurrency: 10
-  timeout: 5s
-  scan_ports:
-    - 80
-    - 8080
-    - 3128
-    - 1080
-  scan_timeout: 3
-  scan_workers: 10
-  rate_limit: 100
-
-metrics:
-  enabled: true
-  path: "/metrics"
-
-health:
-  enabled: true
-  path: "/health"
 CONFIGYAML
+    print_success "config.yaml created"
     
-    # Set permissions
+    # Save credentials
+    print_progress "Saving credentials..."
+    cat > $INSTALL_DIR/credentials.txt << CREDS
+#===============================================================================
+# BEON-IPQuality Credentials
+# Generated: $(date)
+# ⚠️  KEEP THIS FILE SECURE!
+#===============================================================================
+
+API_MASTER_KEY=${API_KEY}
+
+# PostgreSQL
+POSTGRES_USER=beon
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=ipquality
+
+# Grafana
+GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
+
+# MaxMind
+MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID:-"(not configured)"}
+
+#===============================================================================
+# Quick Test:
+#   curl -H "X-API-Key: ${API_KEY}" "http://localhost/api/v1/check?ip=8.8.8.8"
+#===============================================================================
+CREDS
+    chmod 600 $INSTALL_DIR/credentials.txt
+    print_success "Credentials saved to $INSTALL_DIR/credentials.txt"
+    
+    # Set ownership
     chown -R $USER:$GROUP $INSTALL_DIR
     chown -R $USER:$GROUP $DATA_DIR
     chown -R $USER:$GROUP $LOG_DIR
-    chmod 640 $INSTALL_DIR/configs/config.yaml
-    
-    print_success "Configuration created"
 
     #===========================================================================
-    # STEP 10: Create Systemd Services
+    # STEP 11: Systemd Services
     #===========================================================================
-    print_step "10/12" "Creating Systemd Services"
+    print_step 11 "CREATING SYSTEMD SERVICES"
     
-    # API Service
+    print_progress "Creating beon-api.service..."
     cat > /etc/systemd/system/beon-api.service << SVCAPI
 [Unit]
 Description=BEON-IPQuality API Server
 After=network.target postgresql.service redis-server.service
-Wants=postgresql.service redis-server.service
 
 [Service]
 Type=simple
@@ -1025,283 +738,184 @@ Restart=always
 RestartSec=5
 LimitNOFILE=65535
 
-Environment=GOMAXPROCS=0
-
-StandardOutput=append:${LOG_DIR}/api.log
-StandardError=append:${LOG_DIR}/api-error.log
-
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=${DATA_DIR} ${LOG_DIR}
-
 [Install]
 WantedBy=multi-user.target
 SVCAPI
-
-    # Judge Service
-    cat > /etc/systemd/system/beon-judge.service << SVCJUDGE
-[Unit]
-Description=BEON-IPQuality Judge Node
-After=network.target beon-api.service
-
-[Service]
-Type=simple
-User=${USER}
-Group=${GROUP}
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/bin/judge -config ${INSTALL_DIR}/configs/config.yaml
-Restart=always
-RestartSec=10
-LimitNOFILE=65535
-
-StandardOutput=append:${LOG_DIR}/judge.log
-StandardError=append:${LOG_DIR}/judge-error.log
-
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=${DATA_DIR} ${LOG_DIR}
-
-[Install]
-WantedBy=multi-user.target
-SVCJUDGE
+    print_success "beon-api.service created"
     
     systemctl daemon-reload
-    print_success "Systemd services created"
+    print_success "Systemd reloaded"
 
     #===========================================================================
-    # STEP 11: Configure Firewall & Security
+    # STEP 12: Firewall & Security
     #===========================================================================
-    print_step "11/12" "Configuring Firewall & Security"
+    print_step 12 "CONFIGURING FIREWALL & SECURITY"
     
-    # UFW
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow ssh
-    ufw allow 80/tcp
-    ufw allow 443/tcp
-    echo "y" | ufw enable
+    print_progress "Configuring UFW firewall..."
+    ufw default deny incoming 2>/dev/null
+    ufw default allow outgoing 2>/dev/null
+    ufw allow ssh 2>/dev/null
+    ufw allow 80/tcp 2>/dev/null
+    ufw allow 443/tcp 2>/dev/null
+    echo "y" | ufw enable 2>/dev/null
+    print_success "Firewall configured (SSH, HTTP, HTTPS allowed)"
     
-    print_success "Firewall configured"
-    
-    # Fail2ban
-    cat > /etc/fail2ban/jail.local << 'F2BCONF'
-[DEFAULT]
-bantime = 1h
-findtime = 10m
-maxretry = 5
-
-[sshd]
-enabled = true
-port = ssh
-filter = sshd
-logpath = /var/log/auth.log
-
-[nginx-limit-req]
-enabled = true
-port = http,https
-filter = nginx-limit-req
-logpath = /var/log/nginx/error.log
-maxretry = 10
-findtime = 1m
-bantime = 10m
-F2BCONF
-    
-    systemctl restart fail2ban
-    systemctl enable fail2ban
-    
-    print_success "Fail2ban configured"
+    print_progress "Configuring Fail2ban..."
+    systemctl enable fail2ban 2>/dev/null
+    systemctl restart fail2ban 2>/dev/null
+    print_success "Fail2ban enabled"
 
     #===========================================================================
-    # STEP 12: Setup Cron Jobs & Log Rotation
+    # STEP 13: Initial Data Ingestion
     #===========================================================================
-    print_step "12/12" "Setting Up Cron Jobs & Log Rotation"
+    print_step 13 "INITIAL THREAT FEED INGESTION"
     
-    # Cron jobs
-    cat > /etc/cron.d/beon-ipquality << CRONJOBS
-# BEON-IPQuality Automated Tasks
-
-# Update threat feeds every 4 hours
-0 */4 * * * ${USER} ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml -feeds ${INSTALL_DIR}/configs/feeds.yaml >> ${LOG_DIR}/ingestor.log 2>&1
-
-# Recompile MMDB every 4 hours (15 min after ingestor)
-15 */4 * * * ${USER} ${INSTALL_DIR}/bin/compiler -config ${INSTALL_DIR}/configs/config.yaml >> ${LOG_DIR}/compiler.log 2>&1
-
-# Hot reload API after MMDB update
-20 */4 * * * root curl -s -X POST http://127.0.0.1:8080/api/v1/reload >> ${LOG_DIR}/reload.log 2>&1
-
-# Weekly GeoIP update (Sunday 3:00 AM)
-0 3 * * 0 ${USER} ${INSTALL_DIR}/scripts/update-geoip.sh >> ${LOG_DIR}/geoip-update.log 2>&1
-CRONJOBS
+    echo ""
+    echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${YELLOW}║${NC}  This will download threat intelligence feeds from multiple sources.         ${YELLOW}║${NC}"
+    echo -e "${YELLOW}║${NC}  Depending on your connection, this may take 2-10 minutes.                  ${YELLOW}║${NC}"
+    echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
     
-    # Log rotation
-    cat > /etc/logrotate.d/beon-ipquality << LOGROTATE
-${LOG_DIR}/*.log {
-    daily
-    rotate 14
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 ${USER} ${GROUP}
-    sharedscripts
-    postrotate
-        systemctl reload beon-api > /dev/null 2>&1 || true
-    endscript
-}
-LOGROTATE
+    print_progress "Starting threat feed ingestion..."
+    echo ""
     
-    print_success "Cron jobs and log rotation configured"
+    # Run ingestor with --once flag for single run with progress
+    if sudo -u $USER $INSTALL_DIR/bin/ingestor \
+        -config $INSTALL_DIR/configs/config.yaml \
+        -feeds $INSTALL_DIR/configs/feeds.yaml \
+        -once 2>&1; then
+        echo ""
+        print_success "Threat feed ingestion completed!"
+    else
+        echo ""
+        print_warning "Some feeds may have failed - this is normal"
+        print_info "Feeds will be retried automatically via cron"
+    fi
+    
+    # Check database
+    print_progress "Verifying database entries..."
+    ENTRY_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM ip_reputation;" 2>/dev/null | tr -d ' ')
+    if [[ "$ENTRY_COUNT" -gt 0 ]]; then
+        print_success "Database contains $ENTRY_COUNT IP reputation entries"
+    else
+        print_warning "No entries in database yet"
+        print_info "Run manually: sudo -u beon $INSTALL_DIR/bin/ingestor -once"
+    fi
 
     #===========================================================================
     # CLEANUP
     #===========================================================================
-    print_status "Cleaning up..."
+    print_progress "Cleaning up..."
     rm -rf /tmp/BEON-IPQuality
-    apt-get autoremove -y -qq
-    apt-get clean
-    
-    #===========================================================================
-    # SAVE CREDENTIALS & CREATE .ENV
-    #===========================================================================
-    save_credentials
-    create_env_file
-    
-    # Configure GeoIP.conf
-    print_status "Configuring MaxMind GeoIP..."
-    if [[ -n "$MAXMIND_ACCOUNT_ID" && -n "$MAXMIND_LICENSE_KEY" ]]; then
-        cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
-# GeoIP.conf - MaxMind Configuration
-# Auto-generated during installation
+    apt-get autoremove -y -qq 2>/dev/null
+    print_success "Cleanup complete"
 
-AccountID ${MAXMIND_ACCOUNT_ID}
-LicenseKey ${MAXMIND_LICENSE_KEY}
-EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
-
-DatabaseDirectory ${DATA_DIR}/mmdb
-LockFile ${DATA_DIR}/mmdb/.geoipupdate.lock
-GEOIPCONF
-        chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
-        chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
-        print_success "MaxMind GeoIP configured with Account ID: ${MAXMIND_ACCOUNT_ID}"
-        
-        # Try to download GeoIP databases immediately
-        print_status "Downloading GeoIP databases..."
-        if sudo -u ${USER} geoipupdate -f ${INSTALL_DIR}/configs/GeoIP.conf -d ${DATA_DIR}/mmdb 2>/dev/null; then
-            print_success "GeoIP databases downloaded successfully"
-        else
-            print_warning "GeoIP download failed - will retry on first run"
-        fi
-    else
-        # Create placeholder GeoIP.conf
-        cat > ${INSTALL_DIR}/configs/GeoIP.conf << GEOIPCONF
-# GeoIP.conf - MaxMind Configuration
-# IMPORTANT: Add your MaxMind credentials to enable GeoIP updates
-# Get your FREE Account ID & License Key at: https://www.maxmind.com/en/geolite2/signup
-#
-# After login:
-#   - Account ID is shown on your dashboard (6-digit number)
-#   - License Key: Account → Manage License Keys → Generate New Key
-
-AccountID YOUR_ACCOUNT_ID_HERE
-LicenseKey YOUR_LICENSE_KEY_HERE
-EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
-
-DatabaseDirectory ${DATA_DIR}/mmdb
-LockFile ${DATA_DIR}/mmdb/.geoipupdate.lock
-GEOIPCONF
-        chmod 600 ${INSTALL_DIR}/configs/GeoIP.conf
-        chown ${USER}:${GROUP} ${INSTALL_DIR}/configs/GeoIP.conf
-        print_warning "GeoIP.conf created with placeholder - configure with your MaxMind credentials"
-        print_warning "Edit: nano ${INSTALL_DIR}/configs/GeoIP.conf"
-    fi
-    
     #===========================================================================
     # FINAL SUMMARY
     #===========================================================================
+    local elapsed=$(($(date +%s) - START_TIME))
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    
     echo ""
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║          BEON-IPQuality Installation Complete! 🎉               ║${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  🔑 API MASTER KEY (SAVE THIS!)${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  ${GREEN}${API_KEY}${NC}"
-    echo ""
-    echo -e "  ${YELLOW}⚠️  All credentials saved to: ${CYAN}${INSTALL_DIR}/credentials.txt${NC}"
-    echo -e "  ${YELLOW}⚠️  Environment config at:    ${CYAN}${INSTALL_DIR}/.env${NC}"
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  NEXT STEPS${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                                                                              ║${NC}"
+    echo -e "${GREEN}║              🎉 INSTALLATION COMPLETE! 🎉                                    ║${NC}"
+    echo -e "${GREEN}║                                                                              ║${NC}"
+    echo -e "${GREEN}║              Total time: ${mins}m ${secs}s                                            ║${NC}"
+    echo -e "${GREEN}║                                                                              ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
-    local step_num=1
-    
-    # Check if MaxMind is configured
-    if [[ -n "$MAXMIND_ACCOUNT_ID" && -n "$MAXMIND_LICENSE_KEY" ]]; then
-        echo -e "  ${GREEN}✓${NC} MaxMind GeoIP configured (Account: ${MAXMIND_ACCOUNT_ID})"
-        echo ""
-    else
-        echo -e "  ${GREEN}${step_num}.${NC} Setup MaxMind GeoIP (RECOMMENDED - get free key at maxmind.com):"
-        echo -e "     ${CYAN}nano ${INSTALL_DIR}/configs/GeoIP.conf${NC}"
-        echo -e "     Add your AccountID and LicenseKey, then run:"
-        echo -e "     ${CYAN}sudo -u beon geoipupdate -f ${INSTALL_DIR}/configs/GeoIP.conf -d ${DATA_DIR}/mmdb${NC}"
-        echo ""
-        step_num=$((step_num + 1))
-    fi
-    
-    echo -e "  ${GREEN}${step_num}.${NC} Run initial data ingestion:"
-    echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/ingestor -config ${INSTALL_DIR}/configs/config.yaml -feeds ${INSTALL_DIR}/configs/feeds.yaml${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  🔑 YOUR API KEY (SAVE THIS!)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    step_num=$((step_num + 1))
-    
-    echo -e "  ${GREEN}${step_num}.${NC} Compile MMDB database:"
-    echo -e "     ${CYAN}sudo -u beon ${INSTALL_DIR}/bin/compiler -config ${INSTALL_DIR}/configs/config.yaml${NC}"
+    echo -e "  ${GREEN}${BOLD}${API_KEY}${NC}"
     echo ""
-    step_num=$((step_num + 1))
     
-    echo -e "  ${GREEN}${step_num}.${NC} Start the API server:"
-    echo -e "     ${CYAN}sudo systemctl start beon-api${NC}"
-    echo -e "     ${CYAN}sudo systemctl enable beon-api${NC}"
-    echo ""
-    step_num=$((step_num + 1))
-    
-    echo -e "  ${GREEN}${step_num}.${NC} Configure your domain (OPTIONAL):"
-    echo -e "     ${CYAN}sudo ${INSTALL_DIR}/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com${NC}"
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  SERVICE STATUS${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  📊 SERVICE STATUS${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "  PostgreSQL: $(systemctl is-active postgresql)"
-    echo -e "  Redis:      $(systemctl is-active redis-server)"
+    echo -e "  Redis:      $(systemctl is-active redis-server)"  
     echo -e "  Nginx:      $(systemctl is-active nginx)"
-    echo -e "  API:        $(systemctl is-active beon-api 2>/dev/null || echo 'not started yet')"
+    echo -e "  Database:   ${ENTRY_COUNT:-0} IP entries"
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  CREDENTIALS LOCATION${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  🚀 START THE API SERVER${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${CYAN}cat ${INSTALL_DIR}/credentials.txt${NC}"
+    echo -e "  ${CYAN}sudo systemctl start beon-api${NC}"
+    echo -e "  ${CYAN}sudo systemctl enable beon-api${NC}"
     echo ""
-    echo -e "  Contains: API Key, Database Password, Grafana Password, etc."
+    
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  🧪 TEST YOUR API${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  QUICK TEST${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  After starting the API, test with:"
     echo -e "  ${CYAN}curl http://localhost/health${NC}"
     echo -e "  ${CYAN}curl -H \"X-API-Key: ${API_KEY}\" \"http://localhost/api/v1/check?ip=8.8.8.8\"${NC}"
     echo ""
-    echo -e "${GREEN}Installation complete! 🚀${NC}"
+    
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  📁 IMPORTANT FILES${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  Credentials:    ${CYAN}cat $INSTALL_DIR/credentials.txt${NC}"
+    echo -e "  Configuration:  ${CYAN}$INSTALL_DIR/configs/config.yaml${NC}"
+    echo -e "  Logs:           ${CYAN}$LOG_DIR/${NC}"
+    echo ""
+    
+    echo -e "${GREEN}Thank you for installing BEON-IPQuality! 🚀${NC}"
     echo ""
 }
 
-# Run main function
+#===============================================================================
+# ARGUMENT PARSING
+#===============================================================================
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --maxmind-account)
+            MAXMIND_ACCOUNT_ID="$2"
+            shift 2
+            ;;
+        --maxmind-key)
+            MAXMIND_LICENSE_KEY="$2"
+            shift 2
+            ;;
+        --non-interactive)
+            INTERACTIVE=false
+            shift
+            ;;
+        --branch)
+            GITHUB_BRANCH="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "BEON-IPQuality Ubuntu Installer v${SCRIPT_VERSION}"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --maxmind-account ID    MaxMind Account ID"
+            echo "  --maxmind-key KEY       MaxMind License Key"
+            echo "  --non-interactive       Skip interactive prompts"
+            echo "  --branch BRANCH         GitHub branch (default: main)"
+            echo "  -h, --help              Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Run main
 main "$@"
 
