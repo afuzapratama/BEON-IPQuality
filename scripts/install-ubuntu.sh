@@ -529,19 +529,26 @@ NGINXCONF
     export GOPROXY=direct
     export GONOSUMDB="*"
     export GOPRIVATE="*"
+    export GOSUMDB=off
+    
+    # Write go env to ensure settings persist
+    go env -w GOPROXY=direct
+    go env -w GONOSUMDB="*"
+    go env -w GOSUMDB=off
     
     print_info "Go toolchain: $(go version | awk '{print $3}')"
     print_info "Using GOPROXY=direct (bypassing proxy.golang.org)"
+    print_info "GOPROXY=$(go env GOPROXY)"
+    
+    # Clear module cache to avoid cached proxy references
+    rm -rf /opt/go/pkg/mod/cache/download/sumdb 2>/dev/null || true
     
     print_progress "Downloading Go modules..."
-    if go mod download -x 2>&1 | tail -10; then
-        print_success "Modules downloaded"
-    else
-        print_warning "Module download had issues, continuing with build..."
-    fi
+    GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go mod download 2>&1 | tail -10 || true
+    print_success "Modules downloaded"
     
     print_progress "Building API server..."
-    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
+    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
         print_success "API server built"
     else
         print_error "Failed to build API server"
@@ -549,7 +556,7 @@ NGINXCONF
     fi
     
     print_progress "Building Judge node..."
-    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge 2>&1; then
+    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge 2>&1; then
         print_success "Judge node built"
     else
         print_error "Failed to build Judge node"
@@ -557,7 +564,7 @@ NGINXCONF
     fi
     
     print_progress "Building Ingestor..."
-    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor 2>&1; then
+    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor 2>&1; then
         print_success "Ingestor built"
     else
         print_error "Failed to build Ingestor"
@@ -565,7 +572,7 @@ NGINXCONF
     fi
     
     print_progress "Building Compiler..."
-    if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler 2>&1; then
+    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler 2>&1; then
         print_success "Compiler built"
     else
         print_error "Failed to build Compiler"
