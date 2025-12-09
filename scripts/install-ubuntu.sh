@@ -525,18 +525,20 @@ NGINXCONF
     export GOPATH=/opt/go
     export GO111MODULE=on
     export GOTOOLCHAIN=local
-    export GOPROXY="https://proxy.golang.org,direct"
+    # Use direct download to bypass proxy.golang.org (often blocked for datacenter IPs)
+    export GOPROXY=direct
     export GONOSUMDB="*"
+    export GOPRIVATE="*"
     
     print_info "Go toolchain: $(go version | awk '{print $3}')"
+    print_info "Using GOPROXY=direct (bypassing proxy.golang.org)"
     
     print_progress "Downloading Go modules..."
-    if ! go mod download 2>&1 | tail -5; then
-        print_warning "Some modules failed, trying direct download..."
-        export GOPROXY=direct
-        go mod download 2>&1 | tail -3
+    if go mod download -x 2>&1 | tail -10; then
+        print_success "Modules downloaded"
+    else
+        print_warning "Module download had issues, continuing with build..."
     fi
-    print_success "Modules downloaded"
     
     print_progress "Building API server..."
     if go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
