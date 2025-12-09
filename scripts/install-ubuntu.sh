@@ -515,77 +515,39 @@ NGINXCONF
     print_info "Downloaded $FILE_COUNT files"
 
     #===========================================================================
-    # STEP 8: Build Binaries
+    # STEP 8: Download Pre-built Binaries
     #===========================================================================
-    print_step 8 "BUILDING GO BINARIES"
+    print_step 8 "DOWNLOADING PRE-BUILT BINARIES"
     
     cd /tmp/BEON-IPQuality
     
-    export PATH=$PATH:/usr/local/go/bin
-    export GOPATH=/opt/go
-    export GO111MODULE=on
-    export GOTOOLCHAIN=local
-    # Use direct download to bypass proxy.golang.org (often blocked for datacenter IPs)
-    export GOPROXY=direct
-    export GONOSUMDB="*"
-    export GOPRIVATE="*"
-    export GOSUMDB=off
+    RELEASE_URL="https://github.com/afuzapratama/BEON-IPQuality/releases/download/v1.0.0/beon-binaries-linux-amd64.tar.gz"
     
-    # Write go env to ensure settings persist
-    go env -w GOPROXY=direct
-    go env -w GONOSUMDB="*"
-    go env -w GOSUMDB=off
-    
-    print_info "Go toolchain: $(go version | awk '{print $3}')"
-    print_info "Using GOPROXY=direct (bypassing proxy.golang.org)"
-    print_info "GOPROXY=$(go env GOPROXY)"
-    
-    # Clear module cache to avoid cached proxy references
-    rm -rf /opt/go/pkg/mod/cache/download/sumdb 2>/dev/null || true
-    
-    print_progress "Downloading Go modules..."
-    GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go mod download 2>&1 | tail -10 || true
-    print_success "Modules downloaded"
-    
-    print_progress "Building API server..."
-    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/api ./cmd/api 2>&1; then
-        print_success "API server built"
+    print_progress "Downloading binaries from GitHub Release..."
+    if curl -fsSL "$RELEASE_URL" -o /tmp/beon-binaries.tar.gz; then
+        print_success "Downloaded binaries"
     else
-        print_error "Failed to build API server"
+        print_error "Failed to download binaries"
         exit 1
     fi
     
-    print_progress "Building Judge node..."
-    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/judge ./cmd/judge 2>&1; then
-        print_success "Judge node built"
+    print_progress "Extracting binaries..."
+    if tar -xzf /tmp/beon-binaries.tar.gz -C $INSTALL_DIR/bin/; then
+        print_success "Extracted binaries"
     else
-        print_error "Failed to build Judge node"
+        print_error "Failed to extract binaries"
         exit 1
     fi
     
-    print_progress "Building Ingestor..."
-    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/ingestor ./cmd/ingestor 2>&1; then
-        print_success "Ingestor built"
-    else
-        print_error "Failed to build Ingestor"
-        exit 1
-    fi
-    
-    print_progress "Building Compiler..."
-    if GOPROXY=direct GONOSUMDB="*" GOSUMDB=off go build -ldflags="-w -s" -o $INSTALL_DIR/bin/compiler ./cmd/compiler 2>&1; then
-        print_success "Compiler built"
-    else
-        print_error "Failed to build Compiler"
-        exit 1
-    fi
+    chmod +x $INSTALL_DIR/bin/*
     
     # Copy files
     print_progress "Copying configuration files..."
     cp -r configs/* $INSTALL_DIR/configs/ 2>/dev/null || true
     cp -r scripts/* $INSTALL_DIR/scripts/ 2>/dev/null || true
     cp -r migrations/* $INSTALL_DIR/migrations/ 2>/dev/null || true
-    chmod +x $INSTALL_DIR/bin/* $INSTALL_DIR/scripts/*.sh 2>/dev/null || true
-    print_success "All binaries built successfully"
+    chmod +x $INSTALL_DIR/scripts/*.sh 2>/dev/null || true
+    print_success "All binaries installed successfully"
     
     # Show binary sizes
     print_info "Binary sizes:"
@@ -593,6 +555,9 @@ NGINXCONF
         SIZE=$(du -h $INSTALL_DIR/bin/$bin | cut -f1)
         print_info "  $bin: $SIZE"
     done
+    
+    # Cleanup
+    rm -f /tmp/beon-binaries.tar.gz
 
     #===========================================================================
     # STEP 9: Database Migration
