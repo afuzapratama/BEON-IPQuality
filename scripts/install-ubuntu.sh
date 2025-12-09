@@ -15,7 +15,8 @@
 # Requirements: 2GB+ RAM, 20GB+ Storage
 #===============================================================================
 
-set -e
+# Don't use set -e as we handle errors manually with || true patterns
+set +e
 
 # Version
 SCRIPT_VERSION="2.0.0"
@@ -569,18 +570,19 @@ NGINXCONF
         sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5 || true
         print_success "Schema applied"
         
-        TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
+        TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ') || TABLE_COUNT="0"
         print_success "Created $TABLE_COUNT tables"
         
-        # List tables
+        # List tables  
         print_info "Tables created:"
-        TABLES=$(sudo -u postgres psql -d ipquality -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public';" 2>/dev/null || echo "")
-        for table in $TABLES; do
-            [[ -n "$table" ]] && print_info "  - $table"
-        done
+        sudo -u postgres psql -d ipquality -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public';" 2>/dev/null | tr -d ' ' | grep -v '^$' | while IFS= read -r table; do
+            print_info "  - $table"
+        done || true
     else
         print_warning "Migration file not found"
     fi
+    
+    print_info "Step 9 completed"
 
     #===========================================================================
     # STEP 10: Configuration
