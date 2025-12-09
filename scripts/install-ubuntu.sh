@@ -393,13 +393,22 @@ GOENV
     print_success "PostgreSQL service started"
     
     print_progress "Creating database and user..."
-    sudo -u postgres psql -c "SELECT 1 FROM pg_user WHERE usename = 'beon'" 2>/dev/null | grep -q 1 || \
     sudo -u postgres psql << EOSQL
+-- Drop existing if any (for clean reinstall)
+DROP DATABASE IF EXISTS ipquality;
+DROP USER IF EXISTS beon;
+
+-- Create user and database
 CREATE USER beon WITH PASSWORD '${DB_PASSWORD}';
 CREATE DATABASE ipquality OWNER beon;
 GRANT ALL PRIVILEGES ON DATABASE ipquality TO beon;
 \c ipquality
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- Grant schema permissions
+GRANT ALL ON SCHEMA public TO beon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO beon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO beon;
 EOSQL
     print_success "Database 'ipquality' created with user 'beon'"
 
@@ -569,6 +578,17 @@ NGINXCONF
         print_progress "Applying database schema..."
         sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5 || true
         print_success "Schema applied"
+        
+        # IMPORTANT: Grant all permissions to beon user after creating tables
+        print_progress "Granting permissions to beon user..."
+        sudo -u postgres psql -d ipquality << GRANTSQL
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO beon;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO beon;
+GRANT USAGE, CREATE ON SCHEMA public TO beon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO beon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO beon;
+GRANTSQL
+        print_success "Permissions granted"
         
         TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ') || TABLE_COUNT="0"
         print_success "Created $TABLE_COUNT tables"
