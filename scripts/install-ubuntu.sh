@@ -319,12 +319,12 @@ main() {
     #===========================================================================
     # STEP 2: Install Go
     #===========================================================================
-    print_step 2 "INSTALLING GO 1.23"
+    print_step 2 "INSTALLING GO 1.25"
     
-    GO_VERSION="1.23.4"
+    GO_VERSION="1.25.3"
     GO_TARBALL="go${GO_VERSION}.linux-amd64.tar.gz"
     
-    if command -v go &> /dev/null && go version | grep -qE "go1\.(2[1-9]|[3-9])"; then
+    if command -v go &> /dev/null && go version | grep -q "go1.25"; then
         print_success "Go already installed: $(go version | awk '{print $3}')"
     else
         print_progress "Downloading Go ${GO_VERSION}..."

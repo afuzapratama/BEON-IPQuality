@@ -119,7 +119,7 @@ func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, total
 			defer func() { <-sem }() // Release
 
 			entries, stored, feedErr := i.processFeedWithStats(ctx, feedName, feedConfig)
-			
+
 			mu.Lock()
 			totalEntries += entries
 			totalStored += stored
@@ -230,7 +230,7 @@ func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, fe
 
 	elapsed := time.Since(startTime)
 	fmt.Printf("\033[0;32m[✓]\033[0m Completed %s: %d entries in %v\n", feedName, totalEntries, elapsed.Round(time.Millisecond))
-	
+
 	return totalEntries, totalStored, nil
 }
 
