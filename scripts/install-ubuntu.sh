@@ -669,6 +669,7 @@ ingestor:
 
 api:
   auth_enabled: true
+  api_key: "${API_KEY}"
   rate_limit: 1000
   rate_limit_window: 60s
 
