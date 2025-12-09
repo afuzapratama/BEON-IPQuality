@@ -566,17 +566,17 @@ NGINXCONF
     
     if [[ -f "$INSTALL_DIR/migrations/001_initial_schema.sql" ]]; then
         print_progress "Applying database schema..."
-        if sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5; then
-            print_success "Schema applied"
-        fi
+        sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5 || true
+        print_success "Schema applied"
         
-        TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" | tr -d ' ')
+        TABLE_COUNT=$(sudo -u postgres psql -d ipquality -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
         print_success "Created $TABLE_COUNT tables"
         
         # List tables
         print_info "Tables created:"
-        sudo -u postgres psql -d ipquality -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public';" | while read table; do
-            [[ -n "$table" ]] && print_info "  - $(echo $table | tr -d ' ')"
+        TABLES=$(sudo -u postgres psql -d ipquality -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public';" 2>/dev/null || echo "")
+        for table in $TABLES; do
+            [[ -n "$table" ]] && print_info "  - $table"
         done
     else
         print_warning "Migration file not found"
