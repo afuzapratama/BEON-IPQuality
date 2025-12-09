@@ -777,6 +777,48 @@ SVCAPI
     systemctl enable fail2ban 2>/dev/null
     systemctl restart fail2ban 2>/dev/null
     print_success "Fail2ban enabled"
+    
+    # Create cron jobs for automatic updates
+    print_progress "Setting up automatic update cron jobs..."
+    
+    # Cron job for Ingestor (update threat feeds every 4 hours)
+    cat > /etc/cron.d/beon-ingestor << 'CRONINGEST'
+# BEON-IPQuality Threat Feed Ingestion
+# Runs every 4 hours to fetch latest threat intelligence
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 */4 * * * beon /opt/beon-ipquality/bin/ingestor -config /opt/beon-ipquality/configs/config.yaml -feeds /opt/beon-ipquality/configs/feeds.yaml -once >> /var/log/beon-ipquality/ingestor.log 2>&1
+CRONINGEST
+    
+    # Cron job for Compiler (compile MMDB every 4 hours, 30 min after ingestor)
+    cat > /etc/cron.d/beon-compiler << 'CRONCOMPILE'
+# BEON-IPQuality MMDB Compiler
+# Runs 30 minutes after ingestor to compile updated data to MMDB
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+30 */4 * * * beon /opt/beon-ipquality/bin/compiler -config /opt/beon-ipquality/configs/config.yaml -oneshot >> /var/log/beon-ipquality/compiler.log 2>&1
+CRONCOMPILE
+    
+    # Cron job for GeoIP update (weekly on Sunday at 3 AM)
+    if [[ -f "$INSTALL_DIR/configs/GeoIP.conf" ]]; then
+        cat > /etc/cron.d/beon-geoip << CRONGEOIP
+# BEON-IPQuality GeoIP Database Update
+# Runs weekly to update MaxMind GeoLite2 databases
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+0 3 * * 0 beon /usr/bin/geoipupdate -f ${INSTALL_DIR}/configs/GeoIP.conf -d ${DATA_DIR}/mmdb >> /var/log/beon-ipquality/geoip.log 2>&1
+CRONGEOIP
+        print_success "GeoIP weekly update cron created"
+    fi
+    
+    chmod 644 /etc/cron.d/beon-*
+    print_success "Cron jobs created:"
+    print_info "  - Ingestor: Every 4 hours (fetch threat feeds)"
+    print_info "  - Compiler: Every 4 hours + 30min (compile to MMDB)"
+    [[ -f "$INSTALL_DIR/configs/GeoIP.conf" ]] && print_info "  - GeoIP: Weekly (update MaxMind databases)"
 
     #===========================================================================
     # STEP 13: Initial Data Ingestion

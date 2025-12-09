@@ -17,9 +17,10 @@ feeds:
       - url: "https://check.torproject.org/torbulkexitlist"
         format: "plain"
         name: "torproject_bulk"
-      - url: "https://www.dan.me.uk/torlist/?exit"
-        format: "plain"
-        name: "danme_exit"
+      # dan.me.uk disabled - returns 403 for datacenter IPs
+      # - url: "https://www.dan.me.uk/torlist/?exit"
+      #   format: "plain"
+      #   name: "danme_exit"
 
   # ============================================
   # SPAMHAUS
@@ -268,10 +269,10 @@ feeds:
         name: "rulez_bruteforce"
 
   # ============================================
-  # MYIP.MS BLACKLIST
+  # MYIP.MS BLACKLIST (DISABLED - SSL certificate issues)
   # ============================================
   myip_blacklist:
-    enabled: true
+    enabled: false  # Disabled due to SSL certificate errors
     name: "MyIP.MS Blacklist"
     description: "Full bogon and blackhole list"
     threat_type: "bogon"
@@ -336,10 +337,10 @@ feeds:
         name: "urlhaus_hosts"
 
   # ============================================
-  # TALOS INTELLIGENCE
+  # TALOS INTELLIGENCE (DISABLED - URL returns 404)
   # ============================================
   talos_blacklist:
-    enabled: true
+    enabled: false  # Disabled - URL no longer valid (404)
     name: "Cisco Talos Blacklist"
     description: "Cisco Talos threat intelligence"
     threat_type: "malicious"
