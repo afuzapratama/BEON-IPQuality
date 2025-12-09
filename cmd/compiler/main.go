@@ -57,9 +57,18 @@ func main() {
 		return
 	}
 
+	// Get compile interval, default to 1 hour if not set
+	compileInterval := cfg.MMDB.CompileInterval
+	if compileInterval <= 0 {
+		compileInterval = 1 * time.Hour
+		pkglogger.Info(fmt.Sprintf("Using default compile interval: %v", compileInterval))
+	} else {
+		pkglogger.Info(fmt.Sprintf("Compile interval: %v", compileInterval))
+	}
+
 	// Start periodic compilation
 	go func() {
-		ticker := time.NewTicker(cfg.MMDB.CompileInterval)
+		ticker := time.NewTicker(compileInterval)
 		defer ticker.Stop()
 
 		// Run initial compilation
