@@ -49,7 +49,7 @@ MAXMIND_LICENSE_KEY=""
 INTERACTIVE=true
 
 # Statistics tracking
-TOTAL_STEPS=13
+TOTAL_STEPS=16
 CURRENT_STEP=0
 START_TIME=$(date +%s)
 
@@ -800,6 +800,86 @@ SVCAPI
     fi
 
     #===========================================================================
+    # STEP 14: Download GeoIP Databases
+    #===========================================================================
+    print_step 14 "DOWNLOADING GEOIP DATABASES"
+    
+    if [[ -n "$MAXMIND_ACCOUNT_ID" && "$MAXMIND_ACCOUNT_ID" != "skip" ]]; then
+        print_progress "Downloading MaxMind GeoLite2 databases..."
+        
+        # Run geoipupdate
+        if sudo -u $USER geoipupdate -f $INSTALL_DIR/configs/GeoIP.conf -d $DATA_DIR/mmdb -v 2>&1 | tail -5; then
+            print_success "GeoIP databases downloaded"
+            
+            # List downloaded files
+            print_info "Downloaded databases:"
+            ls -lh $DATA_DIR/mmdb/*.mmdb 2>/dev/null | while read line; do
+                print_info "  $line"
+            done || true
+        else
+            print_warning "GeoIP download failed - will use IP reputation only"
+            print_info "You can retry later: sudo -u beon geoipupdate -f $INSTALL_DIR/configs/GeoIP.conf -d $DATA_DIR/mmdb"
+        fi
+    else
+        print_info "MaxMind not configured - skipping GeoIP download"
+        print_info "API will work without GeoIP data (no country/city/ASN info)"
+    fi
+
+    #===========================================================================
+    # STEP 15: Compile MMDB Database
+    #===========================================================================
+    print_step 15 "COMPILING MMDB DATABASE"
+    
+    if [[ "$ENTRY_COUNT" -gt 0 ]]; then
+        print_progress "Compiling reputation data to MMDB format..."
+        print_info "This creates a fast-lookup binary database for sub-millisecond queries"
+        
+        if sudo -u $USER $INSTALL_DIR/bin/compiler \
+            -config $INSTALL_DIR/configs/config.yaml 2>&1 | tail -10; then
+            print_success "MMDB compilation complete"
+            
+            # Check if MMDB was created
+            if [[ -f "$DATA_DIR/mmdb/reputation.mmdb" ]]; then
+                MMDB_SIZE=$(du -h $DATA_DIR/mmdb/reputation.mmdb | cut -f1)
+                print_success "Created reputation.mmdb ($MMDB_SIZE)"
+            fi
+        else
+            print_warning "MMDB compilation failed - API will query PostgreSQL directly"
+            print_info "You can retry later: sudo -u beon $INSTALL_DIR/bin/compiler"
+        fi
+    else
+        print_warning "No data to compile - skipping MMDB creation"
+    fi
+
+    #===========================================================================
+    # STEP 16: Start API Server
+    #===========================================================================
+    print_step 16 "STARTING API SERVER"
+    
+    print_progress "Starting beon-api service..."
+    systemctl daemon-reload
+    systemctl enable beon-api 2>/dev/null
+    systemctl start beon-api
+    
+    sleep 2
+    
+    if systemctl is-active --quiet beon-api; then
+        print_success "API server started successfully"
+        
+        # Test health endpoint
+        print_progress "Testing API health..."
+        HEALTH=$(curl -s http://localhost:8080/health 2>/dev/null || echo "")
+        if echo "$HEALTH" | grep -q "healthy"; then
+            print_success "API health check passed"
+        else
+            print_warning "API may still be starting up"
+        fi
+    else
+        print_error "API server failed to start"
+        print_info "Check logs: sudo journalctl -u beon-api -n 50"
+    fi
+
+    #===========================================================================
     # CLEANUP
     #===========================================================================
     print_progress "Cleaning up..."
@@ -813,6 +893,14 @@ SVCAPI
     local elapsed=$(($(date +%s) - START_TIME))
     local mins=$((elapsed / 60))
     local secs=$((elapsed % 60))
+    
+    # Get MMDB status
+    local MMDB_STATUS="not compiled"
+    [[ -f "$DATA_DIR/mmdb/reputation.mmdb" ]] && MMDB_STATUS="ready ($(du -h $DATA_DIR/mmdb/reputation.mmdb 2>/dev/null | cut -f1))"
+    
+    # Get GeoIP status
+    local GEOIP_STATUS="not configured"
+    [[ -f "$DATA_DIR/mmdb/GeoLite2-City.mmdb" ]] && GEOIP_STATUS="ready"
     
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
@@ -835,18 +923,13 @@ SVCAPI
     echo -e "${YELLOW}  📊 SERVICE STATUS${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  PostgreSQL: $(systemctl is-active postgresql)"
-    echo -e "  Redis:      $(systemctl is-active redis-server)"  
-    echo -e "  Nginx:      $(systemctl is-active nginx)"
-    echo -e "  Database:   ${ENTRY_COUNT:-0} IP entries"
-    echo ""
-    
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  🚀 START THE API SERVER${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  ${CYAN}sudo systemctl start beon-api${NC}"
-    echo -e "  ${CYAN}sudo systemctl enable beon-api${NC}"
+    echo -e "  PostgreSQL:  $(systemctl is-active postgresql)"
+    echo -e "  Redis:       $(systemctl is-active redis-server)"  
+    echo -e "  Nginx:       $(systemctl is-active nginx)"
+    echo -e "  BEON-API:    $(systemctl is-active beon-api)"
+    echo -e "  Database:    ${ENTRY_COUNT:-0} IP entries"
+    echo -e "  MMDB:        ${MMDB_STATUS}"
+    echo -e "  GeoIP:       ${GEOIP_STATUS}"
     echo ""
     
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -854,7 +937,15 @@ SVCAPI
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "  ${CYAN}curl http://localhost/health${NC}"
-    echo -e "  ${CYAN}curl -H \"X-API-Key: ${API_KEY}\" \"http://localhost/api/v1/check?ip=8.8.8.8\"${NC}"
+    echo -e "  ${CYAN}curl -H \"X-API-Key: ${API_KEY}\" \"http://localhost/api/v1/check/8.8.8.8\"${NC}"
+    echo ""
+    
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  🌐 EXTERNAL ACCESS${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    local SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+    echo -e "  ${CYAN}curl -H \"X-API-Key: ${API_KEY}\" \"http://${SERVER_IP}/api/v1/check/8.8.8.8\"${NC}"
     echo ""
     
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -863,7 +954,14 @@ SVCAPI
     echo ""
     echo -e "  Credentials:    ${CYAN}cat $INSTALL_DIR/credentials.txt${NC}"
     echo -e "  Configuration:  ${CYAN}$INSTALL_DIR/configs/config.yaml${NC}"
-    echo -e "  Logs:           ${CYAN}$LOG_DIR/${NC}"
+    echo -e "  Logs:           ${CYAN}sudo journalctl -u beon-api -f${NC}"
+    echo ""
+    
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  🔒 OPTIONAL: SETUP SSL${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${CYAN}sudo $INSTALL_DIR/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com${NC}"
     echo ""
     
     echo -e "${GREEN}Thank you for installing BEON-IPQuality! 🚀${NC}"
