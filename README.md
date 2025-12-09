@@ -410,104 +410,50 @@ sudo journalctl -u beon-ingestor --since "4 hours ago"
 
 ---
 
-## 🛠️ Troubleshooting
+## 📊 Monitoring & Dashboards
 
-### ❌ Error: "endpoint does not exist" (404)
+### Grafana Dashboard (Optional)
 
-**Problem:** Using query parameter instead of path parameter.
-
-```bash
-# ❌ WRONG
-curl "http://localhost/api/v1/check?ip=8.8.8.8"
-
-# ✅ CORRECT
-curl "http://localhost/api/v1/check/8.8.8.8"
-```
-
-### ❌ Error: "unauthorized" (401)
-
-**Problem:** Missing or invalid API key.
+To install Grafana for monitoring:
 
 ```bash
-# Check your API key
-sudo cat /opt/beon-ipquality/credentials.txt | grep API_MASTER_KEY
+# Install Grafana
+sudo apt-get install -y apt-transport-https software-properties-common
+wget -q -O - https://apt.grafana.com/gpg.key | sudo apt-key add -
+echo "deb https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+sudo apt-get update && sudo apt-get install -y grafana
 
-# Use the key in header
-curl -H "X-API-Key: YOUR_ACTUAL_KEY" "http://localhost/api/v1/check/8.8.8.8"
+# Start Grafana
+sudo systemctl start grafana-server
+sudo systemctl enable grafana-server
 ```
 
-### ❌ Error: "permission denied for table"
+**Access Grafana:**
+- URL: `http://YOUR_VPS_IP:3000`
+- Default Username: `admin`
+- Default Password: `admin` (change on first login)
+- Or use generated password from: `cat /opt/beon-ipquality/credentials.txt | grep GRAFANA`
 
-**Problem:** Database permissions not set correctly.
+**Configure Prometheus Data Source:**
+1. Go to Configuration → Data Sources → Add data source
+2. Select **Prometheus**
+3. URL: `http://localhost:9090`
+4. Click **Save & Test**
+
+### Prometheus Metrics
+
+Built-in metrics endpoint at `/metrics`:
 
 ```bash
-# Fix permissions
-sudo -u postgres psql -d ipquality << EOF
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO beon;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO beon;
-GRANT USAGE, CREATE ON SCHEMA public TO beon;
-EOF
-
-# Restart API
-sudo systemctl restart beon-api
+curl http://localhost/metrics
 ```
 
-### ❌ Error: "password authentication failed"
-
-**Problem:** Database password mismatch.
-
-```bash
-# Check password in credentials
-sudo grep POSTGRES_PASSWORD /opt/beon-ipquality/credentials.txt
-
-# Reset password in PostgreSQL
-sudo -u postgres psql -c "ALTER USER beon WITH PASSWORD 'YOUR_PASSWORD';"
-
-# Update config if needed
-sudo nano /opt/beon-ipquality/configs/config.yaml
-
-# Restart API
-sudo systemctl restart beon-api
-```
-
-### ❌ API Not Starting
-
-```bash
-# Check detailed logs
-sudo journalctl -u beon-api -n 100 --no-pager
-
-# Verify config syntax
-cat /opt/beon-ipquality/configs/config.yaml
-
-# Test binary directly
-sudo -u beon /opt/beon-ipquality/bin/api -config /opt/beon-ipquality/configs/config.yaml
-```
-
-### 🔄 Complete Reinstall
-
-If all else fails, do a clean reinstall:
-
-```bash
-# Full cleanup
-sudo systemctl stop beon-api beon-judge beon-ingestor 2>/dev/null
-sudo systemctl disable beon-api beon-judge beon-ingestor 2>/dev/null
-sudo rm -f /etc/systemd/system/beon-*.service
-sudo systemctl daemon-reload
-sudo rm -rf /opt/beon-ipquality /opt/go /tmp/BEON-IPQuality
-sudo rm -rf /var/log/beon-ipquality /var/lib/beon-ipquality
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS ipquality;" 2>/dev/null
-sudo -u postgres psql -c "DROP USER IF EXISTS beon;" 2>/dev/null
-sudo userdel -r beon 2>/dev/null
-sudo rm -f /etc/cron.d/beon-*
-sudo rm -f /etc/nginx/sites-enabled/beon-ipquality
-sudo rm -f /etc/nginx/sites-available/beon-ipquality
-sudo systemctl reload nginx 2>/dev/null
-sudo rm -rf /usr/local/go /etc/profile.d/go.sh
-echo "✅ Cleanup complete!"
-
-# Fresh install
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
-```
+Available metrics:
+- `beon_api_requests_total` - Total API requests
+- `beon_api_request_duration_seconds` - Request latency
+- `beon_ip_lookups_total` - IP lookup count
+- `beon_cache_hits_total` - Redis cache hits
+- `beon_database_queries_total` - PostgreSQL queries
 
 ---
 
@@ -563,10 +509,63 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
+## 🙏 Credits & Attribution
+
+### Threat Intelligence Feeds
+
+Thanks to these amazing open-source threat intelligence providers:
+
+| Provider | Website | License |
+|----------|---------|---------|
+| **FireHOL IP Lists** | [iplists.firehol.org](https://iplists.firehol.org/) | GPL |
+| **Emerging Threats** | [rules.emergingthreats.net](https://rules.emergingthreats.net/) | BSD |
+| **Tor Project** | [torproject.org](https://www.torproject.org/) | BSD |
+| **Spamhaus** | [spamhaus.org](https://www.spamhaus.org/) | Spamhaus License |
+| **Abuse.ch** | [abuse.ch](https://abuse.ch/) | CC0 |
+| **Blocklist.de** | [blocklist.de](https://www.blocklist.de/) | GPL |
+| **DShield** | [dshield.org](https://www.dshield.org/) | CC BY-NC-SA |
+| **GreenSnow** | [greensnow.co](https://greensnow.co/) | Free |
+| **CINS Score** | [cinsscore.com](https://cinsscore.com/) | Free |
+| **Binary Defense** | [binarydefense.com](https://www.binarydefense.com/) | Free |
+| **Stamparm** | [github.com/stamparm](https://github.com/stamparm/ipsum) | GPL |
+| **IPSum** | [github.com/stamparm/ipsum](https://github.com/stamparm/ipsum) | GPL |
+
+### GeoIP Data
+
+- **MaxMind GeoLite2** - [maxmind.com](https://www.maxmind.com/) - CC BY-SA 4.0
+
+### Open Source Libraries
+
+| Library | Purpose | License |
+|---------|---------|---------|
+| [Fiber](https://gofiber.io/) | Web Framework | MIT |
+| [pgx](https://github.com/jackc/pgx) | PostgreSQL Driver | MIT |
+| [go-redis](https://github.com/redis/go-redis) | Redis Client | BSD-2 |
+| [maxminddb-golang](https://github.com/oschwald/maxminddb-golang) | MMDB Reader | ISC |
+| [mmdbwriter](https://github.com/maxmind/mmdbwriter) | MMDB Writer | Apache 2.0 |
+| [viper](https://github.com/spf13/viper) | Configuration | MIT |
+| [zap](https://github.com/uber-go/zap) | Logging | MIT |
+
+### Inspired By
+
+- [IPQualityScore](https://www.ipqualityscore.com/)
+- [Proxycheck.io](https://proxycheck.io/)
+- [IP2Location](https://www.ip2location.com/)
+
+---
+
 ## 🤝 Contributing
 
 Contributions welcome! Please open an issue or pull request.
 
 ---
 
-Made with ❤️ by BEON Team
+## 👨‍💻 Author
+
+**BEON Team**
+
+- GitHub: [@afuzapratama](https://github.com/afuzapratama)
+
+---
+
+Made with ❤️ in Indonesia 🇮🇩
