@@ -2,557 +2,571 @@
 
 **High-Performance IP Reputation & Proxy Detection System**
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
 ## 📖 Overview
 
-BEON-IPQuality adalah sistem reputasi IP dan deteksi proksi berkinerja tinggi yang dibangun menggunakan **Golang**. Sistem ini mampu mendeteksi:
+BEON-IPQuality adalah sistem reputasi IP dan deteksi proxy berkinerja tinggi. Sistem ini mampu mendeteksi:
 
 - 🧅 **Tor Exit Nodes** - Jaringan anonimisasi Tor
 - 🔒 **VPN/Proxy** - VPN komersial dan proxy publik
 - 🏢 **Datacenter IPs** - IP dari penyedia hosting/cloud
 - 🤖 **Botnet C2** - Server Command & Control malware
-- 🚫 **Blacklisted IPs** - IP dari berbagai blocklist
+- 🚫 **Blacklisted IPs** - IP dari berbagai threat intelligence feeds
 
 ## ✨ Features
 
 - ⚡ **Ultra-fast queries** (< 1ms latency)
-- 📊 **Risk scoring** (0-100) dengan time decay
-- 🔄 **Hot reload** tanpa downtime
-- 🌐 **REST API** dengan rate limiting
-- 📈 **Real-time analytics** dengan ClickHouse
-- 🔍 **Active proxy detection** (Judge Node)
+- 📊 **Risk scoring** (0-100) dengan kategorisasi
+- 🔄 **Auto-update** threat feeds setiap 4 jam
+- 🌐 **REST API** dengan API key authentication
+- 📈 **1.6M+ IP entries** dari 21 threat feeds
+- 🔒 **Rate limiting** built-in
 
-## 🏗️ Architecture
+---
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    BEON-IPQuality System                     │
-├─────────────────────────────────────────────────────────────┤
-│  API Layer    : Go (Fiber) + MMDB Reader                    │
-│  Cache        : In-Memory Radix Tree                        │
-│  Master DB    : PostgreSQL + ip4r extension                 │
-│  Analytics    : ClickHouse                                   │
-│  Ingestor     : Go Goroutines + Cron Scheduler              │
-│  Judge Node   : Go TCP/HTTP Scanner                          │
-└─────────────────────────────────────────────────────────────┘
-```
+## 🚀 Quick Start Installation
 
-## 🚀 Quick Start
-
-### One-Line Install (Ubuntu VPS) - Recommended
+### One-Line Install (Ubuntu 22.04/24.04 LTS)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
 ```
 
-#### What Happens During Installation:
+### What Gets Installed
 
-1. **Interactive Setup** - You'll be prompted for MaxMind Account ID & License Key
-2. **Auto-Install** - Go 1.21+, PostgreSQL 17, Redis 7, Nginx, geoipupdate
-3. **Auto-Generate** - All passwords & API keys generated automatically
-4. **Auto-Configure** - All services configured and ready to use
-5. **Auto-Download** - GeoIP databases downloaded if credentials provided
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| PostgreSQL | 17 | Primary database |
+| Redis | 7 | Caching layer |
+| Nginx | Latest | Reverse proxy |
+| Go | 1.25 | Runtime (for compilation) |
 
-#### Interactive Prompts:
+### Installation Process (~2 minutes)
+
+The installer will:
+
+1. ✅ Update system packages
+2. ✅ Install Go 1.25.3
+3. ✅ Install & configure PostgreSQL 17
+4. ✅ Install & configure Redis 7
+5. ✅ Install & configure Nginx
+6. ✅ Create `beon` system user
+7. ✅ Clone repository & download pre-built binaries
+8. ✅ Run database migrations (8 tables)
+9. ✅ Create configuration files
+10. ✅ Setup systemd services
+11. ✅ Configure firewall (UFW)
+12. ✅ **Ingest 1.6M+ threat IPs** from 21 feeds
+
+### Interactive Prompts
+
+During installation, you'll be asked for MaxMind credentials (optional):
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  MaxMind GeoLite2 Configuration (Required for GeoIP features)  │
+│  MaxMind GeoLite2 Configuration (Optional - for GeoIP features)│
 ├─────────────────────────────────────────────────────────────────┤
 │  Get your FREE Account ID & License Key at:                    │
 │  https://www.maxmind.com/en/geolite2/signup                    │
 └─────────────────────────────────────────────────────────────────┘
 
-Enter MaxMind Account ID (6-digit number, or 'skip'): 123456
-Enter MaxMind License Key: abcdef1234567890
+Enter MaxMind Account ID (or 'skip'): 
 ```
 
-> 💡 **Tip**: Type `skip` if you don't have MaxMind credentials yet. You can configure later.
+> 💡 Type `skip` if you don't have MaxMind credentials.
 
-#### After Installation:
+---
+
+## 📋 Post-Installation
+
+After installation completes, you'll see:
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║          BEON-IPQuality Installation Complete! 🎉               ║
+║              🎉 INSTALLATION COMPLETE! 🎉                        ║
+║              Total time: ~2 minutes                              ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-🔑 API MASTER KEY (SAVE THIS!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  a7Bk9mNpQrStUvWxYz12345678901234
+🔑 YOUR API KEY (SAVE THIS!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb
 
-  ⚠️  All credentials saved to: /opt/beon-ipquality/credentials.txt
-  ⚠️  Environment config at:    /opt/beon-ipquality/.env
+📊 SERVICE STATUS
+━━━━━━━━━━━━━━━━━
+  PostgreSQL: active
+  Redis:      active
+  Nginx:      active
+  Database:   1,636,197 IP entries
 ```
 
-### Installation Options
+### Step 1: Start API Server
 
 ```bash
-# Interactive install (recommended) - will prompt for MaxMind credentials
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
-
-# With MaxMind credentials (skip prompt)
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | \
-  sudo bash -s -- --maxmind-account "123456" --maxmind-key "YOUR_LICENSE_KEY"
-
-# Fully automated (no prompts at all)
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | \
-  sudo bash -s -- --maxmind-account "123456" --maxmind-key "YOUR_KEY" --non-interactive
-
-# Skip MaxMind setup (configure later)
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | \
-  sudo bash -s -- --non-interactive
-```
-
-### Post-Install Steps
-
-After installation completes, follow these steps **in order**:
-
-```bash
-# 1. Verify database tables exist (should show ~5+ tables)
-sudo -u postgres psql -d ipquality -c "\dt"
-
-# 2. Run initial data ingestion (downloads threat feeds - takes 2-5 minutes)
-sudo -u beon /opt/beon-ipquality/bin/ingestor \
-  -config /opt/beon-ipquality/configs/config.yaml \
-  -feeds /opt/beon-ipquality/configs/feeds.yaml 2>&1 | tee /tmp/ingestor.log
-
-# 3. Check data was ingested
-sudo -u postgres psql -d ipquality -c "SELECT COUNT(*) FROM ip_entries;"
-
-# 4. Compile MMDB database (creates fast-lookup binary file)
-sudo -u beon /opt/beon-ipquality/bin/compiler \
-  -config /opt/beon-ipquality/configs/config.yaml 2>&1 | tee /tmp/compiler.log
-
-# 5. Start the API server
 sudo systemctl start beon-api
 sudo systemctl enable beon-api
-
-# 6. Test the API
-curl http://localhost:8080/health
-curl -H "X-API-Key: YOUR_API_KEY" "http://localhost:8080/api/v1/check?ip=8.8.8.8"
-
-# 7. (Optional) Configure domain with SSL
-sudo /opt/beon-ipquality/scripts/setup-domain.sh --domain api.yourdomain.com --email you@email.com
 ```
 
-> ⚠️ **Important**: If step 2 (ingestor) shows no output for more than 30 seconds, check if database tables exist (step 1). If tables are missing, run the migration manually:
-> ```bash
-> sudo -u postgres psql -d ipquality -f /opt/beon-ipquality/migrations/001_initial_schema.sql
-> ```
-
-### Quick Fix (For Existing Installations)
-
-If you already installed and need to configure MaxMind credentials:
+### Step 2: Verify Services
 
 ```bash
-# 1. Set your MaxMind credentials
-sudo tee /opt/beon-ipquality/configs/GeoIP.conf << 'EOF'
-AccountID YOUR_ACCOUNT_ID_HERE
-LicenseKey YOUR_LICENSE_KEY_HERE
-EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
-DatabaseDirectory /opt/beon-ipquality/data/mmdb
+# Check all services are running
+sudo systemctl status beon-api
+sudo systemctl status postgresql
+sudo systemctl status redis
+sudo systemctl status nginx
+```
+
+### Step 3: Test the API
+
+```bash
+# Health check (no auth required)
+curl http://localhost/health
+```
+
+**Expected response:**
+```json
+{"status":"healthy","version":"1.0.0","uptime":"10.5s","timestamp":"2025-12-09T06:07:59Z"}
+```
+
+---
+
+## 🧪 API Testing Guide
+
+### ⚠️ Important: API Endpoint Format
+
+The IP address goes in the **URL path**, NOT as a query parameter:
+
+```bash
+# ✅ CORRECT - IP in path
+curl "http://localhost/api/v1/check/8.8.8.8"
+
+# ❌ WRONG - IP as query parameter
+curl "http://localhost/api/v1/check?ip=8.8.8.8"
+```
+
+### Authentication
+
+All API endpoints (except `/health` and `/metrics`) require an API key header:
+
+```
+X-API-Key: YOUR_API_KEY
+```
+
+---
+
+### 1. Health Check
+
+**Endpoint:** `GET /health`  
+**Auth Required:** No
+
+```bash
+curl http://localhost/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "uptime": "1h30m45s",
+  "timestamp": "2025-12-09T06:07:59Z",
+  "services": {
+    "api": "healthy",
+    "database": "healthy",
+    "mmdb": "healthy"
+  }
+}
+```
+
+---
+
+### 2. Check Single IP
+
+**Endpoint:** `GET /api/v1/check/:ip`  
+**Auth Required:** Yes
+
+```bash
+# Replace YOUR_API_KEY with your actual API key
+curl -H "X-API-Key: YOUR_API_KEY" "http://localhost/api/v1/check/8.8.8.8"
+```
+
+**Example - Check Google DNS (clean IP):**
+```bash
+curl -H "X-API-Key: NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb" \
+  "http://localhost/api/v1/check/8.8.8.8"
+```
+
+**Response (Clean IP):**
+```json
+{
+  "ip": "8.8.8.8",
+  "score": 0,
+  "risk_level": "low",
+  "threats": [],
+  "is_proxy": false,
+  "is_vpn": false,
+  "is_tor": false,
+  "is_datacenter": false,
+  "cached": false,
+  "query_time_ms": 0.45
+}
+```
+
+**Example - Check Known Malicious IP:**
+```bash
+curl -H "X-API-Key: NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb" \
+  "http://localhost/api/v1/check/185.220.101.1"
+```
+
+**Response (Malicious IP):**
+```json
+{
+  "ip": "185.220.101.1",
+  "score": 85,
+  "risk_level": "high",
+  "threats": ["tor_exit", "proxy", "anonymizer"],
+  "is_proxy": true,
+  "is_vpn": false,
+  "is_tor": true,
+  "is_datacenter": true,
+  "first_seen": "2024-01-15T00:00:00Z",
+  "last_seen": "2025-12-09T00:00:00Z",
+  "source_count": 5,
+  "cached": false,
+  "query_time_ms": 0.32
+}
+```
+
+---
+
+### 3. Batch Check (Multiple IPs)
+
+**Endpoint:** `POST /api/v1/batch`  
+**Auth Required:** Yes  
+**Max IPs:** 100 per request
+
+```bash
+curl -X POST \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ips": ["8.8.8.8", "185.220.101.1", "1.1.1.1"]}' \
+  "http://localhost/api/v1/batch"
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {"ip": "8.8.8.8", "score": 0, "risk_level": "low"},
+    {"ip": "185.220.101.1", "score": 85, "risk_level": "high"},
+    {"ip": "1.1.1.1", "score": 0, "risk_level": "low"}
+  ],
+  "total_count": 3,
+  "total_time_ms": 1.25
+}
+```
+
+---
+
+### 4. Get Statistics
+
+**Endpoint:** `GET /api/v1/stats`  
+**Auth Required:** Yes
+
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" "http://localhost/api/v1/stats"
+```
+
+---
+
+### 5. Prometheus Metrics
+
+**Endpoint:** `GET /metrics`  
+**Auth Required:** No
+
+```bash
+curl http://localhost/metrics
+```
+
+---
+
+## 🌐 External Access (From Internet)
+
+### Access from Your Computer
+
+Replace `YOUR_VPS_IP` with your VPS IP address:
+
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" "http://YOUR_VPS_IP/api/v1/check/8.8.8.8"
+```
+
+### Real Example
+
+```bash
+curl -H "X-API-Key: NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb" \
+  "http://45.143.166.221/api/v1/check/8.8.8.8"
+```
+
+---
+
+## 📁 Important Files & Locations
+
+| File | Path | Description |
+|------|------|-------------|
+| **Credentials** | `/opt/beon-ipquality/credentials.txt` | API key, DB password |
+| **Config** | `/opt/beon-ipquality/configs/config.yaml` | Main configuration |
+| **Feeds Config** | `/opt/beon-ipquality/configs/feeds.yaml` | Threat feed sources |
+| **Binaries** | `/opt/beon-ipquality/bin/` | api, judge, ingestor, compiler |
+| **Logs** | `/var/log/beon-ipquality/` | Application logs |
+| **Data** | `/var/lib/beon-ipquality/` | MMDB files, cache |
+
+### View Your Credentials
+
+```bash
+sudo cat /opt/beon-ipquality/credentials.txt
+```
+
+### View Logs
+
+```bash
+# Real-time API logs
+sudo journalctl -u beon-api -f
+
+# Or log file
+sudo tail -f /var/log/beon-ipquality/api.log
+```
+
+---
+
+## 🔧 Management Commands
+
+### Service Management
+
+```bash
+# Start API
+sudo systemctl start beon-api
+
+# Stop API
+sudo systemctl stop beon-api
+
+# Restart API
+sudo systemctl restart beon-api
+
+# Check status
+sudo systemctl status beon-api
+
+# Enable auto-start on boot
+sudo systemctl enable beon-api
+```
+
+### Database Operations
+
+```bash
+# Check total IP count in database
+sudo -u postgres psql -d ipquality -c "SELECT COUNT(*) FROM ip_reputation;"
+
+# List all tables
+sudo -u postgres psql -d ipquality -c "\dt"
+
+# Query specific IP
+sudo -u postgres psql -d ipquality -c \
+  "SELECT * FROM ip_reputation WHERE ip_address = '185.220.101.1';"
+
+# Check threat types distribution
+sudo -u postgres psql -d ipquality -c \
+  "SELECT threat_type, COUNT(*) FROM ip_reputation GROUP BY threat_type ORDER BY count DESC;"
+```
+
+### Manual Threat Feed Update
+
+```bash
+# Run ingestor manually (normally auto-runs every 4 hours)
+sudo -u beon /opt/beon-ipquality/bin/ingestor --once --verbose
+```
+
+### Compile MMDB (Optional - for faster lookups)
+
+```bash
+sudo -u beon /opt/beon-ipquality/bin/compiler
+```
+
+---
+
+## 🔄 Auto-Updates
+
+Threat feeds are automatically updated every 4 hours via cron:
+
+```bash
+# View cron job
+cat /etc/cron.d/beon-ingestor
+
+# Check last ingestor run
+sudo journalctl -u beon-ingestor --since "4 hours ago"
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+### ❌ Error: "endpoint does not exist" (404)
+
+**Problem:** Using query parameter instead of path parameter.
+
+```bash
+# ❌ WRONG
+curl "http://localhost/api/v1/check?ip=8.8.8.8"
+
+# ✅ CORRECT
+curl "http://localhost/api/v1/check/8.8.8.8"
+```
+
+### ❌ Error: "unauthorized" (401)
+
+**Problem:** Missing or invalid API key.
+
+```bash
+# Check your API key
+sudo cat /opt/beon-ipquality/credentials.txt | grep API_MASTER_KEY
+
+# Use the key in header
+curl -H "X-API-Key: YOUR_ACTUAL_KEY" "http://localhost/api/v1/check/8.8.8.8"
+```
+
+### ❌ Error: "permission denied for table"
+
+**Problem:** Database permissions not set correctly.
+
+```bash
+# Fix permissions
+sudo -u postgres psql -d ipquality << EOF
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO beon;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO beon;
+GRANT USAGE, CREATE ON SCHEMA public TO beon;
 EOF
 
-# 2. Download GeoIP databases
-sudo -u beon geoipupdate -f /opt/beon-ipquality/configs/GeoIP.conf \
-  -d /opt/beon-ipquality/data/mmdb -v
-
-# 3. Run ingestor with correct flags
-sudo -u beon /opt/beon-ipquality/bin/ingestor \
-  -config /opt/beon-ipquality/configs/config.yaml \
-  -feeds /opt/beon-ipquality/configs/feeds.yaml
+# Restart API
+sudo systemctl restart beon-api
 ```
 
-### 🔧 Troubleshooting
+### ❌ Error: "password authentication failed"
 
-#### Error: `'api.rate_limit' expected type 'int'`
-
-This happens when config.yaml format doesn't match the Go struct. Fix by updating config:
+**Problem:** Database password mismatch.
 
 ```bash
-# Backup old config
-sudo cp /opt/beon-ipquality/configs/config.yaml /opt/beon-ipquality/configs/config.yaml.bak
+# Check password in credentials
+sudo grep POSTGRES_PASSWORD /opt/beon-ipquality/credentials.txt
 
-# Get your DB password
-DB_PASS=$(grep POSTGRES_PASSWORD /opt/beon-ipquality/credentials.txt | cut -d'=' -f2)
+# Reset password in PostgreSQL
+sudo -u postgres psql -c "ALTER USER beon WITH PASSWORD 'YOUR_PASSWORD';"
 
-# Create correct config format
-sudo tee /opt/beon-ipquality/configs/config.yaml << EOF
-server:
-  host: "127.0.0.1"
-  port: 8080
-  read_timeout: 30s
-  write_timeout: 30s
-  idle_timeout: 120s
+# Update config if needed
+sudo nano /opt/beon-ipquality/configs/config.yaml
 
-environment: production
-
-logging:
-  level: "info"
-  format: "json"
-  output: "file"
-  file_path: "/var/log/beon-ipquality/api.log"
-
-database:
-  postgres:
-    host: "localhost"
-    port: 5432
-    database: "ipquality"
-    username: "beon"
-    password: "$DB_PASS"
-    ssl_mode: "disable"
-    max_connections: 50
-    min_connections: 10
-    max_conn_lifetime: 1h
-    max_conn_idle_time: 30m
-
-redis:
-  enabled: true
-  host: "localhost"
-  port: 6379
-  password: ""
-  db: 0
-  pool_size: 100
-
-mmdb:
-  reputation_path: "/var/lib/beon-ipquality/mmdb/reputation.mmdb"
-  geolite2_city_path: "/var/lib/beon-ipquality/mmdb/GeoLite2-City.mmdb"
-  geolite2_asn_path: "/var/lib/beon-ipquality/mmdb/GeoLite2-ASN.mmdb"
-  output_path: "/var/lib/beon-ipquality/mmdb/reputation.mmdb"
-  reload_interval: 1h
-
-scoring:
-  decay_lambda: 0.01
-  max_score: 100
-  risk_threshold: 50
-
-ingestor:
-  batch_size: 1000
-  workers: 4
-
-api:
-  auth_enabled: true
-  rate_limit: 1000
-  rate_limit_window: 60s
-  batch_enabled: true
-  batch_max_size: 100
-
-judge:
-  enabled: false
-  port: 8081
-
-metrics:
-  enabled: true
-
-health:
-  enabled: true
-EOF
-
-# Set permissions
-sudo chown beon:beon /opt/beon-ipquality/configs/config.yaml
-sudo chmod 640 /opt/beon-ipquality/configs/config.yaml
-
-# Test again
-sudo -u beon /opt/beon-ipquality/bin/ingestor \
-  -config /opt/beon-ipquality/configs/config.yaml \
-  -feeds /opt/beon-ipquality/configs/feeds.yaml
+# Restart API
+sudo systemctl restart beon-api
 ```
 
-#### Error: `no PostgreSQL user name specified`
-
-Database credentials not configured correctly. Check config has nested `database.postgres`:
-
-```yaml
-database:
-  postgres:           # ← Must be nested!
-    host: "localhost"
-    username: "beon"  # ← Not 'user'
-    password: "xxx"
-    database: "ipquality"  # ← Not 'name'
-```
-
-#### Error: `permission denied ./configs/feeds.yaml`
-
-Using relative path instead of absolute. Always use full path:
+### ❌ API Not Starting
 
 ```bash
-# Wrong ❌
-sudo -u beon /opt/beon-ipquality/bin/ingestor -config ./configs/config.yaml
+# Check detailed logs
+sudo journalctl -u beon-api -n 100 --no-pager
 
-# Correct ✅
-sudo -u beon /opt/beon-ipquality/bin/ingestor \
-  -config /opt/beon-ipquality/configs/config.yaml \
-  -feeds /opt/beon-ipquality/configs/feeds.yaml
+# Verify config syntax
+cat /opt/beon-ipquality/configs/config.yaml
+
+# Test binary directly
+sudo -u beon /opt/beon-ipquality/bin/api -config /opt/beon-ipquality/configs/config.yaml
 ```
 
-#### Clean Reinstall
+### 🔄 Complete Reinstall
 
-If you need to start fresh:
+If all else fails, do a clean reinstall:
 
 ```bash
-# Stop and remove everything
-sudo systemctl stop beon-api beon-judge 2>/dev/null
+# Full cleanup
+sudo systemctl stop beon-api beon-judge beon-ingestor 2>/dev/null
+sudo systemctl disable beon-api beon-judge beon-ingestor 2>/dev/null
 sudo rm -f /etc/systemd/system/beon-*.service
 sudo systemctl daemon-reload
-sudo rm -rf /opt/beon-ipquality /var/lib/beon-ipquality /var/log/beon-ipquality
-sudo userdel -r beon 2>/dev/null
-sudo rm -f /etc/cron.d/beon-ipquality
+sudo rm -rf /opt/beon-ipquality /opt/go /tmp/BEON-IPQuality
+sudo rm -rf /var/log/beon-ipquality /var/lib/beon-ipquality
 sudo -u postgres psql -c "DROP DATABASE IF EXISTS ipquality;" 2>/dev/null
 sudo -u postgres psql -c "DROP USER IF EXISTS beon;" 2>/dev/null
+sudo userdel -r beon 2>/dev/null
+sudo rm -f /etc/cron.d/beon-*
+sudo rm -f /etc/nginx/sites-enabled/beon-ipquality
+sudo rm -f /etc/nginx/sites-available/beon-ipquality
+sudo systemctl reload nginx 2>/dev/null
+sudo rm -rf /usr/local/go /etc/profile.d/go.sh
+echo "✅ Cleanup complete!"
 
 # Fresh install
 curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
 ```
 
-### View Your Credentials
+---
 
-```bash
-# All passwords are saved here
-sudo cat /opt/beon-ipquality/credentials.txt
-```
+## 📊 Threat Feed Sources
 
-### Get MaxMind Credentials (Free)
+BEON-IPQuality aggregates data from 21 threat intelligence feeds:
 
-1. Register at [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup)
-2. After login, your **Account ID** is shown on the dashboard (6-digit number)
-3. Go to **Account → Manage License Keys → Generate new license key**
-4. Use both Account ID and License Key during installation
+| Feed | Type | Description |
+|------|------|-------------|
+| Firehol Level 1-4 | Aggregated | Multiple blocklists combined |
+| Emerging Threats | Compromised | Known compromised IPs |
+| Tor Exit Nodes | Anonymizer | Tor network exits |
+| Spamhaus DROP | Spam | Spam networks |
+| Abuse.ch | Malware | Malware/Botnet C2 |
+| Blocklist.de | Brute Force | SSH/FTP attackers |
+| DShield | Attacks | Active attackers |
+| Talos Intelligence | Threats | Cisco threat intel |
+| *And 13 more...* | Various | Multiple sources |
 
-> 📝 **Note**: You need BOTH Account ID and License Key. The installer will prompt for both.
+---
 
-### Manual Installation
-
-```bash
-# Clone repository
-git clone https://github.com/afuzapratama/BEON-IPQuality.git
-cd BEON-IPQuality
-
-# Install dependencies
-go mod download
-
-# Build binaries
-make build
-
-# Start services
-make run-api
-```
-
-### Using Docker
-
-```bash
-# Build and run all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-```
-
-## 📡 API Usage
-
-### Check Single IP
-
-```bash
-curl -X GET "http://localhost:8080/api/v1/check/185.220.101.42" \
-  -H "X-API-Key: your-api-key"
-```
-
-### Response
-
-```json
-{
-  "ip": "185.220.101.42",
-  "score": 87,
-  "risk_level": "high",
-  "proxy": true,
-  "vpn": false,
-  "tor": true,
-  "datacenter": true,
-  "threats": [
-    {
-      "type": "tor_exit",
-      "source": "torproject",
-      "confidence": 1.0,
-      "last_seen": "2025-12-07T10:30:00Z"
-    }
-  ],
-  "geo": {
-    "country": "DE",
-    "city": "Frankfurt",
-    "asn": 24940,
-    "org": "Hetzner Online GmbH"
-  },
-  "query_time_ms": 0.45
-}
-```
-
-### Batch Check
-
-```bash
-curl -X POST "http://localhost:8080/api/v1/check/batch" \
-  -H "X-API-Key: your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{"ips": ["1.2.3.4", "5.6.7.8"]}'
-```
-
-## 📂 Project Structure
+## 🏗️ Architecture
 
 ```
-BEON-IPQuality/
-├── cmd/                    # Application entry points
-│   ├── api/                # API server
-│   ├── ingestor/           # Data ingestion service
-│   ├── compiler/           # MMDB compiler
-│   └── judge/              # Active proxy scanner
-├── internal/               # Private application code
-│   ├── api/                # API handlers & middleware
-│   ├── config/             # Configuration
-│   ├── database/           # Database connections
-│   ├── ingestor/           # Ingestion logic
-│   ├── mmdb/               # MMDB operations
-│   ├── scoring/            # Risk scoring engine
-│   └── judge/              # Proxy detection
-├── pkg/                    # Public packages
-├── migrations/             # Database migrations
-├── configs/                # Configuration files
-├── deployments/            # Deployment configs
-└── docs/                   # Documentation
+┌─────────────────────────────────────────────────────────────┐
+│                    BEON-IPQuality System                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────┐    ┌─────────┐    ┌─────────────────────────┐ │
+│  │  Nginx  │───▶│   API   │───▶│  PostgreSQL (1.6M IPs) │ │
+│  │ :80/443 │    │  :8080  │    │       + Redis Cache     │ │
+│  └─────────┘    └─────────┘    └─────────────────────────┘ │
+│                      │                                      │
+│                      ▼                                      │
+│              ┌─────────────┐                                │
+│              │    MMDB     │  (Optional compiled DB)        │
+│              │  < 1ms      │                                │
+│              └─────────────┘                                │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │  Ingestor (Cron every 4h)                               ││
+│  │  - Fetches 21 threat feeds                              ││
+│  │  - Updates 1.6M+ IP entries                             ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## 🔧 Configuration
-
-```yaml
-# configs/config.yaml
-server:
-  port: 8080
-  read_timeout: 5s
-  write_timeout: 10s
-
-database:
-  postgres:
-    host: localhost
-    port: 5432
-    database: beon_ipquality
-    username: postgres
-    password: secret
-
-mmdb:
-  path: ./data/mmdb/reputation.mmdb
-  reload_interval: 1h
-
-scoring:
-  decay_lambda: 0.01
-  weights:
-    spamhaus: 95
-    feodo: 90
-    firehol: 85
-    tor: 70
-    datacenter: 50
-    proxy_list: 40
-```
-
-## 📊 Data Sources
-
-| Source | Type | Update Frequency |
-|--------|------|------------------|
-| Tor Project | Exit Nodes | Hourly |
-| Spamhaus DROP | Hijacked Netblocks | Daily |
-| FireHOL | Multi-threat | Real-time |
-| Abuse.ch Feodo | Botnet C2 | 5 minutes |
-| MaxMind GeoLite2 | Geolocation | Weekly |
-
-## 🧪 Testing
-
-```bash
-# Run unit tests
-make test
-
-# Run with coverage
-make test-coverage
-
-# Run integration tests
-make test-integration
-```
-
-## 📈 Performance
-
-| Metric | Value |
-|--------|-------|
-| API Latency (p50) | < 1ms |
-| API Latency (p99) | < 5ms |
-| Throughput | > 100,000 req/sec |
-| Data Freshness | < 1 hour |
+---
 
 ## 📜 License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) file.
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
+Contributions welcome! Please open an issue or pull request.
 
 ---
 
-## 🙏 Credits & Attributions
-
-### Data Sources & Threat Intelligence
-
-This project uses data from the following sources. We are grateful for their contributions to internet security:
-
-| Source | Description | License |
-|--------|-------------|---------|
-| [MaxMind GeoLite2](https://www.maxmind.com/en/geolite2/signup) | IP Geolocation databases | [GeoLite2 EULA](https://www.maxmind.com/en/geolite2/eula) |
-| [Tor Project](https://www.torproject.org/) | Tor exit node list | Public Domain |
-| [Spamhaus](https://www.spamhaus.org/) | DROP/EDROP blocklists | Free for non-commercial use |
-| [Abuse.ch](https://abuse.ch/) | Feodo Tracker, SSL Blacklist | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
-| [FireHOL](https://github.com/firehol/blocklist-ipsets) | IP blocklist compilation | [GPL v3](https://www.gnu.org/licenses/gpl-3.0.html) |
-| [IPsum](https://github.com/stamparm/ipsum) | Daily threat intelligence | [MIT](https://opensource.org/licenses/MIT) |
-| [Emerging Threats](https://rules.emergingthreats.net/) | Compromised IP lists | Free for non-commercial use |
-| [Blocklist.de](https://www.blocklist.de/) | Attack IP blocklist | Free |
-| [CINS Army](https://cinsscore.com/) | CI Army bad IP list | Free |
-| [Greensnow](https://greensnow.co/) | Blocklist | Free |
-
-### Technologies & Libraries
-
-| Technology | Description | License |
-|------------|-------------|---------|
-| [Go](https://golang.org/) | Programming language | [BSD 3-Clause](https://opensource.org/licenses/BSD-3-Clause) |
-| [Fiber](https://github.com/gofiber/fiber) | Web framework | [MIT](https://opensource.org/licenses/MIT) |
-| [MaxMind DB](https://github.com/maxmind/mmdbwriter) | MMDB writer library | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
-| [oschwald/maxminddb-golang](https://github.com/oschwald/maxminddb-golang) | MMDB reader | [ISC](https://opensource.org/licenses/ISC) |
-| [PostgreSQL](https://www.postgresql.org/) | Database | [PostgreSQL License](https://www.postgresql.org/about/licence/) |
-| [Redis](https://redis.io/) | Cache & rate limiting | [BSD 3-Clause](https://opensource.org/licenses/BSD-3-Clause) |
-| [ClickHouse](https://clickhouse.com/) | Analytics database | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
-| [Prometheus](https://prometheus.io/) | Monitoring | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
-| [Grafana](https://grafana.com/) | Visualization | [AGPL v3](https://www.gnu.org/licenses/agpl-3.0.html) |
-| [Nginx](https://nginx.org/) | Reverse proxy | [BSD 2-Clause](https://opensource.org/licenses/BSD-2-Clause) |
-
-### Inspiration
-
-This project was inspired by:
-- [IPQualityScore](https://www.ipqualityscore.com/) - Commercial IP reputation service
-- [Proxycheck.io](https://proxycheck.io/) - Proxy detection API
-- [AbuseIPDB](https://www.abuseipdb.com/) - Community IP abuse database
-
-### Special Thanks
-
-- **MaxMind** for providing free GeoLite2 databases
-- **Tor Project** for maintaining public exit node lists  
-- **Abuse.ch** for their commitment to free threat intelligence
-- **FireHOL** for aggregating multiple blocklists
-- The open-source community for amazing tools and libraries
-
----
-
-## ⚠️ Disclaimer
-
-This software is provided "as is" without warranty. The threat intelligence data is sourced from third parties and may contain false positives. Always verify results and use responsibly.
-
-**MaxMind Attribution**: This product includes GeoLite2 data created by MaxMind, available from [https://www.maxmind.com](https://www.maxmind.com).
-
----
-
-**Built with ❤️ in Indonesia 🇮🇩**
+Made with ❤️ by BEON Team
