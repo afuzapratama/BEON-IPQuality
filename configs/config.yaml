@@ -41,6 +41,7 @@ clickhouse:
 
 # Redis (Optional Cache)
 redis:
+  operation_timeout: 50ms
   enabled: true
   host: localhost
   port: 6379
@@ -50,6 +51,8 @@ redis:
 
 # MMDB Configuration
 mmdb:
+  feeds_path: ./configs/feeds.yaml
+  max_age: 1h
   # Path to the custom reputation MMDB file
   reputation_path: ./data/mmdb/reputation.mmdb
   # Path to MaxMind GeoLite2 files
@@ -58,9 +61,9 @@ mmdb:
   # Output path for compiled MMDB
   output_path: ./data/mmdb/reputation.mmdb
   # How often to check for MMDB updates
-  reload_interval: 1h
+  reload_interval: 5m
   # How often to recompile MMDB
-  compile_interval: 6h
+  compile_interval: 15m
   # Record size (24, 28, or 32)
   record_size: 28
   # Enable memory mapping for better performance
@@ -72,19 +75,19 @@ scoring:
   decay_lambda: 0.01
   # Maximum score cap
   max_score: 100
-  # Minimum score for flagging as risky
+  # Minimum score for the response risky flag (0 uses legacy default 50)
   risk_threshold: 50
   # Source weights
   weights:
     spamhaus_drop: 95
-    spamhaus_edrop: 95
+    spamhaus_drop/edrop: 95
     abuse_feodo: 90
     firehol_level1: 85
     firehol_level2: 75
-    tor_exit: 70
-    datacenter_asn: 50
-    proxy_list: 40
-    vpn_provider: 45
+    tor_exit_nodes: 70
+    datacenter_ips: 50
+    proxy_lists: 40
+    vpn_providers: 45
   # ASN type bonuses
   asn_bonuses:
     datacenter: 20

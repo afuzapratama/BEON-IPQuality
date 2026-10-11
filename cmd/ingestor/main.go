@@ -12,6 +12,7 @@ import (
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
 	"github.com/lfrfrfr/beon-ipquality/internal/database"
 	"github.com/lfrfrfr/beon-ipquality/internal/ingestor"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	pkglogger "github.com/lfrfrfr/beon-ipquality/pkg/logger"
 )
 
@@ -134,6 +135,12 @@ func main() {
 
 		printSuccess("Ingestion completed successfully!")
 		os.Exit(0)
+	}
+
+	if cfg.Metrics.Enabled {
+		if err := internalmetrics.Serve(ctx, cfg.Metrics.Host, cfg.Metrics.Port, cfg.Metrics.Path); err != nil {
+			pkglogger.Fatal(fmt.Sprintf("Cannot start pipeline metrics: %v", err))
+		}
 	}
 
 	// Daemon mode

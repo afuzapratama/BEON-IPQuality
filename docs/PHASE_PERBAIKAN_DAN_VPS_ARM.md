@@ -27,10 +27,10 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 
 ## Phase 0 — Baseline dan GitHub
 
-- [ ] Inventarisasi perubahan tracked/untracked yang sudah ada; review sebelum commit agar data/secret/artefak lokal tidak ikut.
+- [x] Inventarisasi perubahan tracked/untracked yang sudah ada; review sebelum commit agar data/secret/artefak lokal tidak ikut.
 - [x] Buat branch perbaikan dari baseline yang diketahui dan commit pekerjaan dalam bagian yang bisa direview.
-- [ ] Verifikasi akses baca/tulis GitHub serta status CI/release remote. Remote lokal sudah menunjuk `git@github.com:afuzapratama/BEON-IPQuality.git`, branch `main`; ini belum sama dengan bukti akses push.
-- [ ] Tetapkan tracker ini sebagai acuan pekerjaan berikutnya, dengan bukti test/commit untuk setiap status selesai.
+- [x] Verifikasi akses baca/tulis GitHub serta status CI/release remote. Remote lokal sudah menunjuk `git@github.com:afuzapratama/BEON-IPQuality.git`, branch `main`; ini belum sama dengan bukti akses push.
+- [x] Tetapkan tracker ini sebagai acuan pekerjaan berikutnya, dengan bukti test/commit untuk setiap status selesai.
 
 ## Phase 1 — Perbaikan dasar produksi
 
@@ -44,19 +44,21 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 
 ## Phase 2 — Pipeline dan kualitas data
 
-- [ ] Hubungkan konfigurasi scoring ke compiler; pastikan bobot feed dan decay diterapkan sesuai kontrak.
-- [ ] Tentukan klasifikasi ASN dari sumber yang tersedia dan hubungkan modifier ASN; uji perbedaan metadata ASN dan sinyal risiko.
-- [ ] Tetapkan SLA freshness per feed. Ukur waktu ingest/compile/reload; target proposal <1 jam tidak bisa dijamin hanya dengan compile interval 1 jam.
-- [ ] Tambahkan versi/checksum snapshot dan waktu sukses ingest/compile; health/status membedakan data tersedia dari data stale.
-- [ ] Reload hanya pada versi berubah, invalidasi cache konsisten, snapshot lama tetap tersedia bila reload gagal.
-- [ ] Lengkapi notifikasi reload Judge jika profil Judge dipakai; bila tetap polling, dokumentasikan batas keterlambatannya dan tutup TODO dengan desain yang jelas.
-- [ ] Batasi waktu operasi cache dan uji fallback Redis lambat/mati; pertahankan lookup MMDB yang valid.
-- [ ] Tambahkan metrik ingest, compile, freshness, reload dan scanner yang benar-benar di-update.
-- [ ] Neighborhood analysis masuk phase 7 sampai kebutuhan/akurasi terukur; jangan tetap diklaim sebagai fitur selesai.
+- [x] Hubungkan konfigurasi scoring ke compiler; pastikan bobot feed dan decay diterapkan sesuai kontrak.
+- [x] Tentukan klasifikasi ASN dari sumber yang tersedia dan hubungkan modifier ASN; uji perbedaan metadata ASN dan sinyal risiko.
+- [x] Tetapkan SLA freshness per feed. Ukur waktu ingest/compile/reload; target proposal <1 jam tidak bisa dijamin hanya dengan compile interval 1 jam.
+- [x] Tambahkan versi/checksum snapshot dan waktu sukses ingest/compile; health/status membedakan data tersedia dari data stale.
+- [x] Reload hanya pada versi berubah, invalidasi cache konsisten, snapshot lama tetap tersedia bila reload gagal.
+- [x] Lengkapi notifikasi reload Judge jika profil Judge dipakai; bila tetap polling, dokumentasikan batas keterlambatannya dan tutup TODO dengan desain yang jelas.
+- [x] Batasi waktu operasi cache dan uji fallback Redis lambat/mati; pertahankan lookup MMDB yang valid.
+- [x] Tambahkan metrik ingest, compile, freshness, reload dan scanner yang benar-benar di-update.
+- [x] Neighborhood analysis masuk phase 7 sampai kebutuhan/akurasi terukur; jangan tetap diklaim sebagai fitur selesai.
 
 ## Phase 3 — Pengujian, dokumen, dan paket ARM64
 
-- [ ] Buat integration/smoke test deterministik dengan fixture feed: PostgreSQL → ingestor → compiler → API, whitelist/overlap/IPv6, reload, dan auth.
+- [ ] Tetapkan expiry/retention reputasi historis dan riwayat fetch; uji IP yang hilang dari feed dan refresh parsial.
+
+- [x] Buat integration/smoke test deterministik dengan fixture feed: PostgreSQL → ingestor → compiler → API, whitelist/overlap/IPv6, reload, dan auth.
 - [ ] Uji integrasi Redis dan kegagalan dependency. Analytics diuji di phase integrasinya.
 - [ ] Verifikasi build Linux ARM64 semua binary. Workflow release lokal sudah memiliki matrix `amd64`/`arm64`; jalankan dan periksa hasilnya.
 - [ ] Siapkan image API/ingestor/compiler/Judge berlabel versi dan digest, publish ARM64 (atau multiarch) lewat CI; validasi base image/dependency tersedia untuk ARM64.
@@ -136,3 +138,21 @@ Pemeriksaan keamanan baseline Go 1.25.3 mendeteksi 30 vulnerability ID yang terj
 
 
 Hasil akhir validasi phase 1 pada Go 1.27.2: `go test -race ./...`, `go vet ./...`, `go build ./cmd/...`, dan govulncheck v1.9.0 lulus. Seluruh checklist implementasi lokal phase 1 selesai; acceptance di container/VPS dan security review produksi tetap phase berikutnya. Phase 0 belum selesai karena review baseline dan commit/push/CI remote masih pending.
+
+
+## Progres phase 2 — 12 Oktober 2026
+
+Baseline terdahulu termasuk perbaikan phase 1 disimpan pada commit `77a6254`. Data/lock MMDB, artefak build, environment runtime dan private key tidak diikutkan. Branch `fix/production-readiness` menjadi branch review; belum ada perubahan pada main atau deployment VPS.
+
+Scoring kini memakai konfigurasi source override, decay, cap, ASN bonus dan risk threshold (`risky`). GeoLite2 memberi nomor/org ASN; PostgreSQL `asn_info` memberi klasifikasi yang dikenal. Mapping berlaku hanya bila record ASN mencakup seluruh prefix. Sampel bawaan bukan database klasifikasi semua ASN.
+
+Snapshot memakai identitas SHA-256 reputasi/GeoIP/ASN, dan metadata riwayat sukses source dari PostgreSQL. Freshness dinilai per jadwal feed; default compile 15m, polling reload 5m, maksimum umur artefak 1h. Ini anggaran konfigurasi, bukan bukti SLA produksi: durasi antre/storage/compile perlu diukur di phase 6. Legacy MMDB tanpa metadata feed mengungkap status unknown. File yang corrupt atau kehilangan GeoIP/ASN yang sebelumnya berhasil dimuat ditolak saat reload. Satu request membaca generation yang konsisten; cache diberi namespace versi dan timeout, dengan jeda retry satu detik saat dependency gagal.
+
+API dan Judge memakai polling versi/checksum. TODO notifikasi compiler ditutup dengan desain polling yang sama untuk satu VPS; latency publikasi menunggu sampai interval polling ditambah waktu validasi file. Distribusi lintas server tetap phase 7. Metrik ingest/compile/reload/freshness dan scan kini benar-benar di-update; endpoint pipeline tersedia pada jaringan Compose tanpa port publik.
+
+Pengujian integrasi dengan PostgreSQL 17 dan Redis 7 sudah membuktikan ingest/store/history, scoring dan ASN, whitelist, IPv6, cache hit, versi setelah reload, feed outage, kegagalan storage, data stale meski MMDB baru, Redis terputus, serta compiler kosong yang mempertahankan file lama. Uji ini menemukan dan memperbaiki pembentukan prefix IPv6 `.../128/128` serta tag MMDB ASN yang tidak terbaca. Test memakai fixture lokal; feed eksternal, akurasi klasifikasi dan deployment nyata belum diverifikasi.
+
+Tindak lanjut kualitas data: storage saat ini tetap menyimpan reputasi historis dengan decay; penghapusan IP dari feed bukan penghapusan otomatis dari master store. Tentukan kebijakan expiry/retention dan uji refresh parsial di phase 3 sebelum mengklaim sinkronisasi dataset penuh. Riwayat feed juga memerlukan retention operasional. Source yang berubah URL/nama perlu bootstrap ulang agar history tersedia.
+
+
+Validasi lokal akhir phase 2: `go test -race ./...`, `scripts/test-integration.sh` (PostgreSQL 17/Redis 7), `go vet ./...`, `go build ./cmd/...`, validasi Compose, dan govulncheck v1.9.0 lulus. Scanner melaporkan 0 vulnerability terjangkau; ada temuan pada package/module yang tidak terjangkau kode sekarang. Feed internet dan beban VPS belum diuji.

@@ -17,6 +17,7 @@ import (
 
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
 	"github.com/lfrfrfr/beon-ipquality/internal/database"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	"github.com/lfrfrfr/beon-ipquality/pkg/iputil"
 	"github.com/lfrfrfr/beon-ipquality/pkg/logger"
@@ -190,78 +191,49 @@ func (i *Ingestor) runAllFeeds(ctx context.Context) {
 	i.wg.Wait()
 }
 
-// processFeed processes a single feed
+// processFeed runs a scheduled feed through the same storage/history path as bootstrap.
 func (i *Ingestor) processFeed(ctx context.Context, feedName string, feedConfig config.FeedConfig) {
-	logger.Info(fmt.Sprintf("Processing feed: %s", feedName))
-	startTime := time.Now()
-
-	totalEntries := 0
-
-	for _, source := range feedConfig.Sources {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		entries, err := i.fetchSource(ctx, source, feedConfig)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Failed to fetch source %s/%s: %v", feedName, source.Name, err))
-			continue
-		}
-
-		// Store entries
-		if err := i.storeEntries(ctx, entries); err != nil {
-			logger.Error(fmt.Sprintf("Failed to store entries for %s/%s: %v", feedName, source.Name, err))
-			continue
-		}
-
-		totalEntries += len(entries)
-		logger.Info(fmt.Sprintf("Fetched %d entries from %s/%s", len(entries), feedName, source.Name))
+	_, _, err := i.processFeedWithStats(ctx, feedName, feedConfig)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Feed %s failed: %v", feedName, err))
 	}
-
-	logger.Info(fmt.Sprintf("Completed feed %s: %d total entries in %v", feedName, totalEntries, time.Since(startTime)))
 }
 
-// processFeedWithStats processes a single feed and returns statistics
 func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, feedConfig config.FeedConfig) (totalEntries, totalStored int, err error) {
-	// Print progress to stdout for --once mode
-	fmt.Printf("\033[0;34m[*]\033[0m Processing feed: %s\n", feedName)
-	startTime := time.Now()
-
-	var sourceErrors []error
+	var failures []error
 	for _, source := range feedConfig.Sources {
-		select {
-		case <-ctx.Done():
-			return totalEntries, totalStored, ctx.Err()
-		default:
+		if err := ctx.Err(); err != nil {
+			return totalEntries, totalStored, err
 		}
-
-		entries, fetchErr := i.fetchSource(ctx, source, feedConfig)
-		if fetchErr != nil {
-			fmt.Printf("\033[0;31m[✗]\033[0m   Source %s: %v\n", source.Name, fetchErr)
-			sourceErrors = append(sourceErrors, fmt.Errorf("%s: %w", source.Name, fetchErr))
-			continue
+		start := time.Now()
+		entries, sourceErr := i.fetchSource(ctx, source, feedConfig)
+		stored := 0
+		if sourceErr == nil {
+			stored, sourceErr = i.storeEntriesWithCount(ctx, entries)
 		}
-
 		totalEntries += len(entries)
-
-		// Store entries and get count
-		stored, storeErr := i.storeEntriesWithCount(ctx, entries)
-		if storeErr != nil {
-			fmt.Printf("\033[0;31m[✗]\033[0m   Source %s: store error: %v\n", source.Name, storeErr)
-			sourceErrors = append(sourceErrors, fmt.Errorf("%s: %w", source.Name, storeErr))
-			continue
-		}
-
 		totalStored += stored
-		fmt.Printf("\033[0;32m[✓]\033[0m   %s/%s: fetched %d, stored %d\n", feedName, source.Name, len(entries), stored)
+		status, message := "success", ""
+		if sourceErr != nil {
+			status = "error"
+			message = sourceErr.Error()
+			failures = append(failures, fmt.Errorf("%s/%s: %w", feedName, source.Name, sourceErr))
+		}
+		internalmetrics.FeedFetches.WithLabelValues(feedName, source.Name, status).Inc()
+		internalmetrics.FeedDuration.WithLabelValues(feedName, source.Name).Observe(time.Since(start).Seconds())
+		if sourceErr == nil {
+			internalmetrics.FeedLastSuccess.WithLabelValues(feedName, source.Name).SetToCurrentTime()
+		}
+		// Storage/history errors must not silently produce a successful bootstrap.
+		historyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		historyErr := i.db.RecordFeedFetch(historyCtx, feedName, source.URL, status, len(entries), stored, time.Since(start), message)
+		cancel()
+		if historyErr != nil {
+			failures = append(failures, fmt.Errorf("record feed history: %w", historyErr))
+		}
+		logger.Info(fmt.Sprintf("Feed %s/%s: %s, fetched %d, stored %d", feedName, source.Name, status, len(entries), stored))
 	}
-
-	elapsed := time.Since(startTime)
-	fmt.Printf("\033[0;32m[✓]\033[0m Completed %s: %d entries in %v\n", feedName, totalEntries, elapsed.Round(time.Millisecond))
-
-	return totalEntries, totalStored, errors.Join(sourceErrors...)
+	return totalEntries, totalStored, errors.Join(failures...)
 }
 
 // fetchSource fetches and parses a single source
@@ -530,7 +502,7 @@ func (i *Ingestor) storeEntriesWithCount(ctx context.Context, entries []models.F
 			}
 			totalInserted += inserted
 		} else {
-			totalInserted += len(batch)
+			return totalInserted, fmt.Errorf("reputation storage is not configured")
 		}
 	}
 
@@ -664,6 +636,6 @@ func (i *Ingestor) FetchFeed(ctx context.Context, feedName string) error {
 		return fmt.Errorf("feed not found: %s", feedName)
 	}
 
-	i.processFeed(ctx, feedName, feed)
-	return nil
+	_, _, err := i.processFeedWithStats(ctx, feedName, feed)
+	return err
 }

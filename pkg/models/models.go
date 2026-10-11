@@ -76,6 +76,8 @@ type ASNInfo struct {
 
 // IPCheckResult is the result of an IP reputation check
 type IPCheckResult struct {
+	Risky        bool     `json:"risky"`
+	DataVersion  string   `json:"data_version,omitempty"`
 	IP           string   `json:"ip"`
 	Score        int      `json:"score"`
 	RiskScore    int      `json:"risk_score"` // Alias for Score
@@ -171,4 +173,14 @@ type HealthStatus struct {
 	Uptime    string            `json:"uptime"`
 	Timestamp time.Time         `json:"timestamp"`
 	Services  map[string]string `json:"services"`
+}
+
+// FeedFreshness is persistent source freshness captured during compilation.
+type FeedFreshness struct {
+	Feed          string     `json:"feed"`
+	Source        string     `json:"source"`
+	LastSuccess   *time.Time `json:"last_success,omitempty"`
+	LatestStatus  string     `json:"latest_status"`
+	MaxAgeSeconds float64    `json:"max_age_seconds"`
+	Stale         bool       `json:"stale"`
 }

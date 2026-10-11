@@ -61,6 +61,7 @@ func main() {
 	}
 	handlers.SetMMDBConfig(handlers.MMDBConfig{
 		ReputationPath: mmdbPath,
+		MaxAge:         cfg.MMDB.MaxAge,
 		GeoIPCityPath:  cfg.MMDB.GeoLite2CityPath,
 		GeoIPASNPath:   cfg.MMDB.GeoLite2ASNPath,
 	})
@@ -82,17 +83,20 @@ func main() {
 		}()
 	}
 
+	handlers.SetCacheTimeout(cfg.Redis.OperationTimeout)
+
 	// Initialize Redis cache (if enabled)
 	if cfg.Redis.Enabled {
 		redisCache, err := cache.NewRedisCache(cache.Config{
-			URL:      cfg.Redis.URL,
-			Host:     cfg.Redis.Host,
-			Port:     cfg.Redis.Port,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-			PoolSize: cfg.Redis.PoolSize,
-			TTL:      5 * time.Minute,
-			Prefix:   "ipq:",
+			URL:              cfg.Redis.URL,
+			OperationTimeout: cfg.Redis.OperationTimeout,
+			Host:             cfg.Redis.Host,
+			Port:             cfg.Redis.Port,
+			Password:         cfg.Redis.Password,
+			DB:               cfg.Redis.DB,
+			PoolSize:         cfg.Redis.PoolSize,
+			TTL:              5 * time.Minute,
+			Prefix:           "ipq:",
 		})
 		if err != nil {
 			pkglogger.Warn(fmt.Sprintf("Failed to connect to Redis: %v (caching disabled)", err))
@@ -156,11 +160,24 @@ func startMMDBReload(reader *mmdb.Reader, cfg *config.Config) (context.CancelFun
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := reader.Reload(cfg.MMDB.ReputationPath, cfg.MMDB.GeoLite2CityPath, cfg.MMDB.GeoLite2ASNPath); err != nil {
-					pkglogger.Error(fmt.Sprintf("Scheduled MMDB reload failed: %v", err))
-				} else if cache := handlers.GetConfiguredCache(); cache != nil {
-					_ = cache.Clear(context.Background())
+				changed, err := reader.ReloadIfChanged(cfg.MMDB.ReputationPath, cfg.MMDB.GeoLite2CityPath, cfg.MMDB.GeoLite2ASNPath)
+				status := "unchanged"
+				if changed {
+					status = "changed"
 				}
+				if err != nil {
+					status = "error"
+					pkglogger.Error(fmt.Sprintf("Scheduled MMDB reload failed: %v", err))
+				}
+				internalmetrics.Reloads.WithLabelValues(status).Inc()
+				snapshot := reader.Snapshot(cfg.MMDB.MaxAge, time.Now())
+				internalmetrics.SnapshotBuiltAt.Set(float64(snapshot.BuiltAt.Unix()))
+				stale := 0.0
+				if snapshot.Stale {
+					stale = 1
+				}
+				internalmetrics.SnapshotStale.Set(stale)
+
 			}
 		}
 	}()

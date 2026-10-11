@@ -1,6 +1,7 @@
 package mmdb
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -18,6 +19,7 @@ import (
 
 // WriterConfig holds configuration for MMDB writing
 type WriterConfig struct {
+	Feeds               []models.FeedFreshness
 	DatabaseType        string
 	Description         string
 	RecordSize          int // 24, 28, or 32
@@ -55,16 +57,18 @@ func NewDefaultWriter() *Writer {
 
 // ReputationEntry represents a single entry to write
 type ReputationEntry struct {
-	Prefix      netip.Prefix
-	RiskScore   int
-	RiskLevel   string
-	ThreatType  string
-	ThreatTypes []string
-	Confidence  float64
-	Sources     []string
-	Flags       EntryFlags
-	LastUpdate  time.Time
-	Whitelisted bool
+	RiskThreshold int
+	ASN           *models.ASNInfo
+	Prefix        netip.Prefix
+	RiskScore     int
+	RiskLevel     string
+	ThreatType    string
+	ThreatTypes   []string
+	Confidence    float64
+	Sources       []string
+	Flags         EntryFlags
+	LastUpdate    time.Time
+	Whitelisted   bool
 }
 
 // EntryFlags represents boolean threat flags
@@ -90,10 +94,18 @@ func (w *Writer) CompileToMMDB(entries []ReputationEntry, outputPath string) err
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	description := map[string]string{"en": w.config.Description}
+	if w.config.Feeds != nil {
+		data, err := json.Marshal(w.config.Feeds)
+		if err != nil {
+			return err
+		}
+		description["beon_feed_freshness"] = string(data)
+	}
 	// Create MMDB writer
 	tree, err := mmdbwriter.New(mmdbwriter.Options{
 		DatabaseType:            w.config.DatabaseType,
-		Description:             map[string]string{"en": w.config.Description},
+		Description:             description,
 		RecordSize:              w.config.RecordSize,
 		IPVersion:               w.config.IPVersion,
 		IncludeReservedNetworks: w.config.IncludeReservedNets,
@@ -168,25 +180,35 @@ func (w *Writer) entryToMMDBRecord(entry ReputationEntry) mmdbtype.DataType {
 		sources = append(sources, mmdbtype.String(s))
 	}
 
+	threshold := entry.RiskThreshold
+	if threshold <= 0 {
+		threshold = 50
+	}
 	record := mmdbtype.Map{
-		"risk_score":    mmdbtype.Uint16(entry.RiskScore),
-		"risk_level":    mmdbtype.String(entry.RiskLevel),
-		"threat_type":   mmdbtype.String(entry.ThreatType),
-		"confidence":    mmdbtype.Uint16(int(entry.Confidence * 100)),
-		"sources":       sources,
-		"threat_types":  stringSliceToMMDB(entry.ThreatTypes),
-		"last_update":   mmdbtype.Uint64(entry.LastUpdate.Unix()),
-		"whitelisted":   mmdbtype.Bool(entry.Whitelisted),
-		"is_tor":        mmdbtype.Bool(entry.Flags.IsTor),
-		"is_vpn":        mmdbtype.Bool(entry.Flags.IsVPN),
-		"is_proxy":      mmdbtype.Bool(entry.Flags.IsProxy),
-		"is_datacenter": mmdbtype.Bool(entry.Flags.IsDatacenter),
-		"is_botnet":     mmdbtype.Bool(entry.Flags.IsBotnet),
-		"is_malware":    mmdbtype.Bool(entry.Flags.IsMalware),
-		"is_spam":       mmdbtype.Bool(entry.Flags.IsSpam),
-		"is_attacker":   mmdbtype.Bool(entry.Flags.IsAttacker),
+		"risk_threshold": mmdbtype.Uint16(threshold),
+		"risk_score":     mmdbtype.Uint16(entry.RiskScore),
+		"risk_level":     mmdbtype.String(entry.RiskLevel),
+		"threat_type":    mmdbtype.String(entry.ThreatType),
+		"confidence":     mmdbtype.Uint16(int(entry.Confidence * 100)),
+		"sources":        sources,
+		"threat_types":   stringSliceToMMDB(entry.ThreatTypes),
+		"last_update":    mmdbtype.Uint64(entry.LastUpdate.Unix()),
+		"whitelisted":    mmdbtype.Bool(entry.Whitelisted),
+		"is_tor":         mmdbtype.Bool(entry.Flags.IsTor),
+		"is_vpn":         mmdbtype.Bool(entry.Flags.IsVPN),
+		"is_proxy":       mmdbtype.Bool(entry.Flags.IsProxy),
+		"is_datacenter":  mmdbtype.Bool(entry.Flags.IsDatacenter),
+		"is_botnet":      mmdbtype.Bool(entry.Flags.IsBotnet),
+		"is_malware":     mmdbtype.Bool(entry.Flags.IsMalware),
+		"is_spam":        mmdbtype.Bool(entry.Flags.IsSpam),
+		"is_attacker":    mmdbtype.Bool(entry.Flags.IsAttacker),
 	}
 
+	if entry.ASN != nil {
+		record["asn"] = mmdbtype.Uint32(entry.ASN.ASN)
+		record["asn_org"] = mmdbtype.String(entry.ASN.Org)
+		record["asn_type"] = mmdbtype.String(entry.ASN.ASNType)
+	}
 	return record
 }
 
@@ -222,6 +244,11 @@ func mergeReputationRecord(newValue mmdbtype.DataType) inserter.Func {
 		}
 
 		merged := existingMap.Copy().(mmdbtype.Map)
+		for _, key := range []mmdbtype.String{"asn", "asn_org", "asn_type"} {
+			if value, ok := newMap[key]; ok {
+				merged[key] = value.Copy()
+			}
+		}
 		for _, key := range []string{"is_tor", "is_vpn", "is_proxy", "is_datacenter", "is_botnet", "is_malware", "is_spam", "is_attacker"} {
 			merged[mmdbtype.String(key)] = mmdbtype.Bool(boolValue(existingMap, key) || boolValue(newMap, key))
 		}
@@ -516,3 +543,5 @@ func parseToPrefix(s string) (netip.Prefix, error) {
 	}
 	return prefix, nil
 }
+
+func (w *Writer) SetFeedFreshness(feeds []models.FeedFreshness) { w.config.Feeds = feeds }

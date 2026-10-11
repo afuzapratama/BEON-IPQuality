@@ -75,6 +75,9 @@ test-coverage:
 	$(GOTEST) -v -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
+test-integration:
+	./scripts/test-integration.sh
+
 test-race:
 	@echo "Running tests with the race detector..."
 	$(GOTEST) -race ./...

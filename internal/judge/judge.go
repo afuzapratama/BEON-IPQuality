@@ -16,6 +16,7 @@ import (
 
 	"github.com/lfrfrfr/beon-ipquality/internal/api/middleware"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	"github.com/lfrfrfr/beon-ipquality/internal/scoring"
 	"github.com/lfrfrfr/beon-ipquality/pkg/iputil"
@@ -159,9 +160,13 @@ func (n *Node) handleCheck(c *fiber.Ctx) error {
 		})
 	}
 
+	if n.mmdbReader.Snapshot(n.config.MMDB.MaxAge, time.Now()).Stale {
+		return c.Status(503).JSON(fiber.Map{"error": "reputation_stale"})
+	}
+
 	// Perform lookup
 	n.mu.RLock()
-	result, err := n.mmdbReader.LookupAll(addr)
+	result, err := n.mmdbReader.LookupAllFresh(addr, n.config.MMDB.MaxAge, time.Now())
 	n.mu.RUnlock()
 
 	if err != nil {
@@ -192,12 +197,14 @@ func (n *Node) handleCheck(c *fiber.Ctx) error {
 
 // handleHealth handles health check requests
 func (n *Node) handleHealth(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{
-		"status":  "healthy",
-		"uptime":  time.Since(n.startTime).String(),
-		"node":    "judge",
-		"version": "1.0.0",
-	})
+	snapshot := n.mmdbReader.Snapshot(n.config.MMDB.MaxAge, time.Now())
+	status := "healthy"
+	code := 200
+	if !n.mmdbReader.IsReady() || snapshot.Stale {
+		status = "unhealthy"
+		code = 503
+	}
+	return c.Status(code).JSON(fiber.Map{"status": status, "uptime": time.Since(n.startTime).String(), "node": "judge", "snapshot": snapshot})
 }
 
 // handleStats handles statistics requests
@@ -219,12 +226,20 @@ func (n *Node) handleReload(c *fiber.Ctx) error {
 	logger.Info("Reload request received")
 
 	n.mu.Lock()
-	err := n.mmdbReader.Reload(
+	changed, err := n.mmdbReader.ReloadIfChanged(
 		n.config.MMDB.ReputationPath,
 		n.config.MMDB.GeoLite2CityPath,
 		n.config.MMDB.GeoLite2ASNPath,
 	)
 	n.mu.Unlock()
+	status := "unchanged"
+	if changed {
+		status = "changed"
+	}
+	if err != nil {
+		status = "error"
+	}
+	internalmetrics.Reloads.WithLabelValues(status).Inc()
 
 	if err != nil {
 		logger.Error(fmt.Sprintf("Reload failed: %v", err))
@@ -235,8 +250,10 @@ func (n *Node) handleReload(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"status":  "success",
-		"message": "MMDB databases reloaded",
+		"status":       "success",
+		"message":      "MMDB reload checked",
+		"changed":      changed,
+		"data_version": n.mmdbReader.Version(),
 	})
 }
 
@@ -256,7 +273,10 @@ func (n *Node) handleScan(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(c.UserContext(), 30*time.Second)
 	defer cancel()
 
+	internalmetrics.ActiveScans.Inc()
+	defer internalmetrics.ActiveScans.Dec()
 	result := n.scanner.Scan(ctx, ipStr)
+	internalmetrics.RecordScanResult("full", result.IsProxy, result.ScanTime)
 	n.scanCount.Add(1)
 
 	return c.JSON(result)
@@ -278,7 +298,10 @@ func (n *Node) handleQuickScan(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(c.UserContext(), 10*time.Second)
 	defer cancel()
 
+	internalmetrics.ActiveScans.Inc()
+	defer internalmetrics.ActiveScans.Dec()
 	result := n.scanner.QuickScan(ctx, ipStr)
+	internalmetrics.RecordScanResult("quick", result.IsProxy, result.ScanTime)
 	n.scanCount.Add(1)
 
 	return c.JSON(result)
@@ -309,12 +332,20 @@ func (n *Node) reloadLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			n.mu.Lock()
-			err := n.mmdbReader.Reload(
+			changed, err := n.mmdbReader.ReloadIfChanged(
 				n.config.MMDB.ReputationPath,
 				n.config.MMDB.GeoLite2CityPath,
 				n.config.MMDB.GeoLite2ASNPath,
 			)
 			n.mu.Unlock()
+			status := "unchanged"
+			if changed {
+				status = "changed"
+			}
+			if err != nil {
+				status = "error"
+			}
+			internalmetrics.Reloads.WithLabelValues(status).Inc()
 
 			if err != nil {
 				logger.Error(fmt.Sprintf("Periodic reload failed: %v", err))

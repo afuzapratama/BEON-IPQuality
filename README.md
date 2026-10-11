@@ -76,6 +76,24 @@ Endpoint yang tersedia:
 
 Respons lookup memakai field `score`/`risk_score`, `risk_level`, flag seperti `proxy`, `vpn`, dan `tor`, serta `threat_types` dan `sources` bila ditemukan. IP private, loopback, link-local, multicast, dan alamat non-global lain ditolak.
 
+## Scoring, freshness, dan reload
+
+Compiler memakai `scoring.decay_lambda`, `max_score`, `weights`, `asn_bonuses`, dan `risk_threshold`. Bobot dapat memakai ID feed pada `configs/feeds.yaml` atau ID feed/source; override source mengalahkan override feed, lalu bobot tersimpan, lalu default threat type. Respons menambahkan `risky` sesuai threshold (whitelist selalu false) dan `data_version` yang mengidentifikasi reputasi, GeoIP, serta ASN yang dipakai. ASN type berasal dari `asn_info`; GeoLite2-ASN hanya memberi nomor/org. Prefix yang melintasi beberapa record ASN tidak diberi satu klasifikasi ASN. Daftar ASN bawaan masih contoh terbatas.
+
+Default compile 15 menit, pemeriksaan reload 5 menit, dan umur maksimum snapshot 1 jam. Freshness source memakai satu interval cron feed ditambah compile/reload dan anggaran retry HTTP. Feed harian tetap mempunyai anggaran lebih dari 24 jam; ini bukan janji semua feed diperbarui dalam satu jam. Waktu antre/storage/compile nyata perlu diukur pada pilot. `/health` menampilkan versi, build time, umur snapshot, timestamp sukses tiap source, dan status stale. Lookup dan health mengembalikan 503 saat snapshot/feed melewati anggaran. Snapshot legacy tanpa metadata feed menampilkan `feed_freshness_known: false`; bootstrap pipeline baru diperlukan untuk memantau tiap source.
+
+Reload memverifikasi isi MMDB dan hanya mengganti generation bila checksum berbeda. Reload gagal mempertahankan semua database yang sebelumnya valid. File MMDB harus diganti secara atomik, bukan ditulis ulang di tempat. Cache memakai namespace versi; generation lama berakhir melalui TTL, sehingga reload tidak perlu menghapus semua cache. Operasi lookup cache dibatasi 50ms; error cache membuka jeda satu detik sebelum percobaan berikutnya dan lookup tetap memakai MMDB. Clear cache manual tetap tersedia dengan admin key.
+
+Compose mengekspor metrik pipeline secara internal pada `ingestor:9091` dan `compiler:9092`; API memakai `/metrics`. Untuk daemon native di host yang sama, set `METRICS_PORT` berbeda pada masing-masing service, dan biarkan `METRICS_HOST=127.0.0.1`.
+
+Uji integrasi deterministik dengan PostgreSQL 17, Redis 7, dan fixture feed/ASN:
+
+```bash
+./scripts/test-integration.sh
+```
+
+Script membuat container sementara dengan port loopback dan membersihkannya setelah pengujian; tidak mengambil threat feed internet. CI menjalankan test yang sama dengan service PostgreSQL/Redis.
+
 ## Pengembangan
 
 Rencana pekerjaan berikutnya mengikuti [phase perbaikan dan deployment VPS ARM](docs/PHASE_PERBAIKAN_DAN_VPS_ARM.md), berdasarkan [audit docs dan implementasi](docs/AUDIT_DOCS_IMPLEMENTASI_2026-10-11.md). Target deployment awal adalah VPS ARM64 langsung dengan Compose, Nginx, dan monitoring server ringan tanpa aaPanel. Akses VPS diperlukan mulai phase 4, setelah perbaikan dan paket deployment siap.

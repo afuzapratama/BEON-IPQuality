@@ -87,13 +87,14 @@ type ClickHouseConfig struct {
 
 // RedisConfig holds Redis configuration
 type RedisConfig struct {
-	URL      string `mapstructure:"url"`
-	Enabled  bool   `mapstructure:"enabled"`
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-	PoolSize int    `mapstructure:"pool_size"`
+	OperationTimeout time.Duration `mapstructure:"operation_timeout"`
+	URL              string        `mapstructure:"url"`
+	Enabled          bool          `mapstructure:"enabled"`
+	Host             string        `mapstructure:"host"`
+	Port             int           `mapstructure:"port"`
+	Password         string        `mapstructure:"password"`
+	DB               int           `mapstructure:"db"`
+	PoolSize         int           `mapstructure:"pool_size"`
 }
 
 // Addr returns the Redis address
@@ -103,6 +104,8 @@ func (r *RedisConfig) Addr() string {
 
 // MMDBConfig holds MMDB file configuration
 type MMDBConfig struct {
+	FeedsPath        string        `mapstructure:"feeds_path"`
+	MaxAge           time.Duration `mapstructure:"max_age"`
 	ReputationPath   string        `mapstructure:"reputation_path"`
 	GeoLite2CityPath string        `mapstructure:"geolite2_city_path"`
 	GeoLite2ASNPath  string        `mapstructure:"geolite2_asn_path"`
@@ -168,6 +171,7 @@ type JudgeConfig struct {
 
 // MetricsConfig holds metrics configuration
 type MetricsConfig struct {
+	Host    string `mapstructure:"host"`
 	Enabled bool   `mapstructure:"enabled"`
 	Port    int    `mapstructure:"port"`
 	Path    string `mapstructure:"path"`
@@ -227,6 +231,23 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+	if c.Scoring.RiskThreshold < 0 || c.Scoring.RiskThreshold > 100 {
+		return fmt.Errorf("invalid configuration: risk threshold must be between 0 and 100")
+	}
+	if c.Scoring.DecayLambda < 0 || c.Scoring.MaxScore < 0 || c.Scoring.MaxScore > 100 {
+		return fmt.Errorf("invalid configuration: scoring decay must be nonnegative and max score between 0 and 100")
+	}
+	for _, weight := range c.Scoring.Weights {
+		if weight < 0 || weight > 100 {
+			return fmt.Errorf("invalid configuration: source weights must be between 0 and 100")
+		}
+	}
+	if c.MMDB.MaxAge < 0 || c.MMDB.CompileInterval < 0 || c.MMDB.ReloadInterval < 0 {
+		return fmt.Errorf("invalid configuration: MMDB durations must be nonnegative")
+	}
+	if c.Redis.Enabled && c.Redis.OperationTimeout <= 0 {
+		return fmt.Errorf("invalid configuration: redis.operation_timeout must be positive")
+	}
 	if c.API.AdminKey != "" && (len(c.API.AdminKey) < 32 || c.API.AdminKey == c.API.APIKey) {
 		return fmt.Errorf("invalid configuration: admin key must be at least 32 characters and differ from lookup key")
 	}
@@ -274,6 +295,11 @@ func bindEnvironment(v *viper.Viper) {
 		"database.postgres.username": {"DB_USER", "POSTGRES_USER"},
 		"database.postgres.password": {"DB_PASSWORD", "POSTGRES_PASSWORD"},
 		"database.postgres.ssl_mode": {"DB_SSL_MODE"},
+		"redis.operation_timeout":    {"REDIS_OPERATION_TIMEOUT"},
+		"mmdb.feeds_path":            {"FEEDS_PATH"},
+		"mmdb.max_age":               {"MMDB_MAX_AGE"},
+		"mmdb.compile_interval":      {"MMDB_COMPILE_INTERVAL"},
+		"mmdb.reload_interval":       {"MMDB_RELOAD_INTERVAL"},
 		"redis.enabled":              {"REDIS_ENABLED"},
 		"redis.url":                  {"REDIS_URL"},
 		"redis.host":                 {"REDIS_HOST"},
@@ -293,6 +319,8 @@ func bindEnvironment(v *viper.Viper) {
 		"judge.scan_timeout":         {"SCAN_TIMEOUT_SECONDS"},
 		"judge.scan_workers":         {"SCAN_WORKERS"},
 		"judge.rate_limit":           {"JUDGE_RATE_LIMIT"},
+		"metrics.host":               {"METRICS_HOST"},
+		"metrics.port":               {"METRICS_PORT"},
 		"metrics.enabled":            {"METRICS_ENABLED"},
 		"metrics.path":               {"METRICS_PATH"},
 		"logging.level":              {"LOG_LEVEL"},
@@ -338,7 +366,11 @@ func setDefaults(v *viper.Viper) {
 
 	// MMDB defaults
 	v.SetDefault("mmdb.reputation_path", "./data/mmdb/reputation.mmdb")
-	v.SetDefault("mmdb.reload_interval", "1h")
+	v.SetDefault("mmdb.reload_interval", "5m")
+	v.SetDefault("mmdb.compile_interval", "15m")
+	v.SetDefault("mmdb.max_age", "1h")
+	v.SetDefault("mmdb.feeds_path", "./configs/feeds.yaml")
+	v.SetDefault("redis.operation_timeout", "50ms")
 	v.SetDefault("mmdb.memory_map", true)
 
 	// Scoring defaults
@@ -364,6 +396,7 @@ func setDefaults(v *viper.Viper) {
 
 	// Metrics defaults
 	v.SetDefault("metrics.enabled", true)
+	v.SetDefault("metrics.host", "127.0.0.1")
 	v.SetDefault("metrics.port", 9090)
 	v.SetDefault("metrics.path", "/metrics")
 

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	"github.com/lfrfrfr/beon-ipquality/internal/scoring"
 	"github.com/lfrfrfr/beon-ipquality/pkg/logger"
@@ -25,6 +26,8 @@ type Compiler struct {
 	scorer      *scoring.Scorer
 	mu          sync.Mutex
 	lastCompile time.Time
+	asnReader   *mmdb.Reader
+	asnTypes    map[int]models.ASNInfo
 }
 
 // New creates a new Compiler instance
@@ -59,8 +62,12 @@ func New(cfg *config.Config) (*Compiler, error) {
 	}
 	mmdbWriter := mmdb.NewWriter(writerConfig)
 
-	// Create scorer
-	scorer := scoring.NewDefault()
+	feeds, err := config.LoadFeeds(cfg.MMDB.FeedsPath)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("load compiler feed configuration: %w", err)
+	}
+	scorer := scoring.FromConfig(cfg.Scoring, feeds)
 
 	return &Compiler{
 		config:     cfg,
@@ -72,18 +79,49 @@ func New(cfg *config.Config) (*Compiler, error) {
 
 // Close closes database connections
 func (c *Compiler) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.asnReader != nil {
+		c.asnReader.Close()
+	}
 	if c.db != nil {
 		c.db.Close()
 	}
 }
 
 // Compile compiles the reputation database to MMDB
-func (c *Compiler) Compile(ctx context.Context) error {
+func (c *Compiler) Compile(ctx context.Context) (compileErr error) {
+	start := time.Now()
+	defer func() {
+		status := "success"
+		if compileErr != nil {
+			status = "error"
+		}
+		internalmetrics.Compilations.WithLabelValues(status).Inc()
+		internalmetrics.CompileDuration.Observe(time.Since(start).Seconds())
+	}()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	logger.Info("Starting MMDB compilation...")
 	startTime := time.Now()
+
+	// Refresh optional ASN metadata from the curated PostgreSQL classification.
+	if err := c.loadASNTypes(ctx); err != nil {
+		return err
+	}
+	candidate, err := mmdb.NewReader("", "", c.config.MMDB.GeoLite2ASNPath)
+	if err != nil {
+		return err
+	}
+	if c.asnReader != nil && c.asnReader.HasASN() && c.config.MMDB.GeoLite2ASNPath != "" && !candidate.HasASN() {
+		candidate.Close()
+		return fmt.Errorf("refusing compilation after loss of loaded ASN database")
+	}
+	if c.asnReader != nil {
+		c.asnReader.Close()
+	}
+	c.asnReader = candidate
 
 	// Fetch reputation data from database
 	reputations, err := c.fetchReputationData(ctx)
@@ -110,17 +148,19 @@ func (c *Compiler) Compile(ctx context.Context) error {
 			LastUpdate:  time.Now(),
 		})
 	}
+	feeds, err := c.fetchFeedFreshness(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("load feed freshness: %w", err)
+	}
+	c.mmdbWriter.SetFeedFreshness(feeds)
 	if err := c.publishEntries(entries); err != nil {
 		return err
 	}
 
 	c.lastCompile = time.Now()
+	internalmetrics.CompileLastSuccess.Set(float64(c.lastCompile.Unix()))
+	internalmetrics.MMDBEntries.Set(float64(len(entries)))
 	logger.Info(fmt.Sprintf("MMDB compilation complete in %v, output: %s", time.Since(startTime), c.config.MMDB.OutputPath))
-
-	// Notify judge nodes about new database (if configured)
-	if c.config.Judge.Enabled {
-		c.notifyJudgeNodes()
-	}
 
 	return nil
 }
@@ -132,8 +172,8 @@ func (c *Compiler) fetchReputationData(ctx context.Context) ([]models.IPReputati
 			id,
 			CASE
 				WHEN cidr IS NOT NULL THEN cidr::text
-				WHEN family(ip_start) = 4 THEN ip_start::text || '/32'
-				ELSE ip_start::text || '/128'
+				WHEN family(ip_start) = 4 THEN host(ip_start) || '/32'
+				ELSE host(ip_start) || '/128'
 			END as ip_range,
 			source,
 			threat_type,
@@ -246,17 +286,26 @@ func (c *Compiler) aggregateReputations(reputations []models.IPReputation, now t
 		aggregate := aggregates[key]
 		sources := mapKeys(aggregate.sources)
 		threatTypes := mapKeys(aggregate.threatTypes)
-		score := c.scorer.CalculateScore(aggregate.threats, nil, now)
+		asn, err := c.classifyASN(aggregate.prefix)
+		if err != nil {
+			return nil, err
+		}
+		if asn != nil && (asn.ASNType == "datacenter" || asn.ASNType == "hosting") {
+			aggregate.flags.IsDatacenter = true
+		}
+		score := c.scorer.CalculateScore(aggregate.threats, asn, now)
 		entries = append(entries, mmdb.ReputationEntry{
-			Prefix:      aggregate.prefix,
-			RiskScore:   score,
-			RiskLevel:   c.scorer.ClassifyRisk(score),
-			ThreatType:  aggregate.primaryType,
-			ThreatTypes: threatTypes,
-			Confidence:  aggregate.confidence,
-			Sources:     sources,
-			Flags:       aggregate.flags,
-			LastUpdate:  aggregate.lastUpdate,
+			Prefix:        aggregate.prefix,
+			RiskScore:     score,
+			RiskThreshold: c.riskThreshold(),
+			RiskLevel:     c.scorer.ClassifyRisk(score),
+			ThreatType:    aggregate.primaryType,
+			ThreatTypes:   threatTypes,
+			Confidence:    aggregate.confidence,
+			Sources:       sources,
+			Flags:         aggregate.flags,
+			LastUpdate:    aggregate.lastUpdate,
+			ASN:           asn,
 		})
 	}
 	return entries, nil
@@ -266,8 +315,8 @@ func (c *Compiler) fetchWhitelistData(ctx context.Context) ([]netip.Prefix, erro
 	rows, err := c.db.Query(ctx, `
 		SELECT CASE
 			WHEN cidr IS NOT NULL THEN cidr::text
-			WHEN family(ip_start) = 4 THEN ip_start::text || '/32'
-			ELSE ip_start::text || '/128'
+			WHEN family(ip_start) = 4 THEN host(ip_start) || '/32'
+			ELSE host(ip_start) || '/128'
 		END
 		FROM whitelist
 		WHERE permanent = true OR expires_at IS NULL OR expires_at > NOW()
@@ -351,13 +400,6 @@ func mergeFlags(left, right mmdb.EntryFlags) mmdb.EntryFlags {
 	}
 }
 
-// notifyJudgeNodes sends notification to judge nodes about new MMDB
-func (c *Compiler) notifyJudgeNodes() {
-	// TODO: Implement notification mechanism
-	// Options: Redis pub/sub, HTTP webhook, gRPC, etc.
-	logger.Debug("Judge node notification not yet implemented")
-}
-
 // GetLastCompileTime returns the last compilation time
 func (c *Compiler) GetLastCompileTime() time.Time {
 	c.mu.Lock()
@@ -389,4 +431,50 @@ func (c *Compiler) publishEntries(entries []mmdb.ReputationEntry) error {
 		return fmt.Errorf("failed to compile MMDB: %w", err)
 	}
 	return nil
+}
+
+func (c *Compiler) loadASNTypes(ctx context.Context) error {
+	rows, err := c.db.Query(ctx, "SELECT asn, COALESCE(org,''), COALESCE(asn_type,'') FROM asn_info")
+	if err != nil {
+		return fmt.Errorf("load ASN classifications: %w", err)
+	}
+	defer rows.Close()
+	types := make(map[int]models.ASNInfo)
+	for rows.Next() {
+		var info models.ASNInfo
+		if err := rows.Scan(&info.ASN, &info.Org, &info.ASNType); err != nil {
+			return err
+		}
+		types[info.ASN] = info
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	c.asnTypes = types
+	return nil
+}
+
+func (c *Compiler) classifyASN(prefix netip.Prefix) (*models.ASNInfo, error) {
+	if c.asnReader == nil {
+		return nil, nil
+	}
+	info, err := c.asnReader.LookupASNPrefix(prefix)
+	if err != nil {
+		return nil, fmt.Errorf("ASN lookup for %s: %w", prefix, err)
+	}
+	if info == nil {
+		return nil, nil
+	}
+	if known, ok := c.asnTypes[info.ASN]; ok {
+		info.ASNType = known.ASNType
+		info.Type = known.ASNType
+	}
+	return info, nil
+}
+
+func (c *Compiler) riskThreshold() int {
+	if c.config != nil && c.config.Scoring.RiskThreshold > 0 {
+		return c.config.Scoring.RiskThreshold
+	}
+	return 50
 }

@@ -21,6 +21,12 @@ x-app-environment: &app-environment
   MMDB_PATH: /app/data/mmdb/reputation.mmdb
   MMDB_OUTPUT: /app/data/mmdb/reputation.mmdb
   GEOIP_CITY_PATH: /app/data/mmdb/GeoLite2-City.mmdb
+  MMDB_COMPILE_INTERVAL: ${MMDB_COMPILE_INTERVAL:-15m}
+  MMDB_RELOAD_INTERVAL: ${MMDB_RELOAD_INTERVAL:-5m}
+  MMDB_MAX_AGE: ${MMDB_MAX_AGE:-1h}
+  REDIS_OPERATION_TIMEOUT: ${REDIS_OPERATION_TIMEOUT:-50ms}
+  FEEDS_PATH: /app/configs/feeds.yaml
+  METRICS_HOST: 0.0.0.0
   GEOIP_ASN_PATH: /app/data/mmdb/GeoLite2-ASN.mmdb
 
 x-app-build: &app-build
@@ -122,6 +128,7 @@ services:
     environment:
       <<: *app-environment
       INGESTOR_SKIP_INITIAL: "true"
+      METRICS_PORT: "9091"
     volumes:
       - mmdb_data:/app/data/mmdb
     depends_on:
@@ -135,7 +142,9 @@ services:
       target: compiler
     restart: unless-stopped
     command: ["-config", "/app/configs/config.yaml", "-skip-initial"]
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      METRICS_PORT: "9092"
     volumes:
       - mmdb_data:/app/data/mmdb
     depends_on:

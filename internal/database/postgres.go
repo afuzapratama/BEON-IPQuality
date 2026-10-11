@@ -182,8 +182,9 @@ func (db *PostgresDB) InsertReputationBatch(ctx context.Context, entries []IPRep
 			VALUES ($1::inet, $2::inet, $3::cidr, $4, $5, $6, $7, $8, $9, $10)
 			ON CONFLICT (ip_start, ip_end, source) 
 			DO UPDATE SET
-				confidence = GREATEST(ip_reputation.confidence, EXCLUDED.confidence),
-				weight = GREATEST(ip_reputation.weight, EXCLUDED.weight),
+				confidence = EXCLUDED.confidence,
+				weight = EXCLUDED.weight,
+ threat_type = EXCLUDED.threat_type,
 				last_seen = EXCLUDED.last_seen
 		`
 		batch.Queue(query,
@@ -204,17 +205,14 @@ func (db *PostgresDB) InsertReputationBatch(ctx context.Context, entries []IPRep
 	defer results.Close()
 
 	inserted := 0
-	for i := range entries {
-		_, err := results.Exec()
-		if err != nil {
-			// Log the error with entry details for debugging
-			if i < 3 { // Only log first 3 errors to avoid spam
-				logger.Error(fmt.Sprintf("Batch insert error for entry %d (ip=%s, source=%s): %v",
-					i, entries[i].IPStart, entries[i].Source, err))
-			}
-			continue
+	for range entries {
+		if _, err := results.Exec(); err != nil {
+			return inserted, fmt.Errorf("reputation batch failed: %w", err)
 		}
 		inserted++
+	}
+	if err := results.Close(); err != nil {
+		return inserted, fmt.Errorf("close reputation batch: %w", err)
 	}
 
 	return inserted, nil

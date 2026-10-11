@@ -27,3 +27,11 @@ scrape_configs:
   - job_name: 'postgres'
     static_configs:
       - targets: ['postgres-exporter:9187']
+
+  - job_name: 'ipquality-ingestor'
+    static_configs:
+      - targets: ['ingestor:9091']
+
+  - job_name: 'ipquality-compiler'
+    static_configs:
+      - targets: ['compiler:9092']

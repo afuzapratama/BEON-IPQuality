@@ -11,6 +11,7 @@ import (
 
 	"github.com/lfrfrfr/beon-ipquality/internal/compiler"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	pkglogger "github.com/lfrfrfr/beon-ipquality/pkg/logger"
 )
@@ -75,6 +76,12 @@ func main() {
 		}
 		reader.Close()
 	}
+	if cfg.Metrics.Enabled {
+		if err := internalmetrics.Serve(ctx, cfg.Metrics.Host, cfg.Metrics.Port, cfg.Metrics.Path); err != nil {
+			pkglogger.Fatal(fmt.Sprintf("Cannot start pipeline metrics: %v", err))
+		}
+	}
+
 	// Start periodic compilation
 	go func() {
 		ticker := time.NewTicker(compileInterval)

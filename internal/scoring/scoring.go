@@ -9,6 +9,7 @@ import (
 
 // Config holds scoring configuration
 type Config struct {
+	SourceWeights map[string]int
 	// Base weights for each threat type
 	ThreatWeights map[string]int
 
@@ -101,12 +102,7 @@ func (s *Scorer) CalculateScore(threats []models.Threat, asnInfo *models.ASNInfo
 	threatTypes := make(map[string]bool)
 
 	for _, threat := range threats {
-		// Prefer the source/feed weight carried with the threat. Fall back to
-		// the threat-type defaults for older records that do not have one.
-		weight := threat.Weight
-		if weight <= 0 {
-			weight = s.getThreatWeight(threat.ThreatType)
-		}
+		weight := s.sourceWeight(threat.Source, threat.Weight, threat.ThreatType)
 
 		// Apply confidence factor
 		confidence := threat.Confidence

@@ -43,14 +43,15 @@ type RedisCache struct {
 
 // Config holds Redis cache configuration
 type Config struct {
-	URL      string
-	Host     string
-	Port     int
-	Password string
-	DB       int
-	PoolSize int
-	TTL      time.Duration
-	Prefix   string
+	OperationTimeout time.Duration
+	URL              string
+	Host             string
+	Port             int
+	Password         string
+	DB               int
+	PoolSize         int
+	TTL              time.Duration
+	Prefix           string
 }
 
 // NewRedisCache creates a new Redis cache instance
@@ -69,6 +70,13 @@ func NewRedisCache(cfg Config) (*RedisCache, error) {
 			options.PoolSize = cfg.PoolSize
 		}
 	}
+	timeout := cfg.OperationTimeout
+	if timeout <= 0 {
+		timeout = 50 * time.Millisecond
+	}
+	options.DialTimeout, options.ReadTimeout, options.WriteTimeout, options.PoolTimeout = timeout, timeout, timeout, timeout
+	options.ContextTimeoutEnabled = true
+	options.MaxRetries = -1
 	client := redis.NewClient(options)
 
 	// Test connection
@@ -76,6 +84,7 @@ func NewRedisCache(cfg Config) (*RedisCache, error) {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		client.Close()
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 

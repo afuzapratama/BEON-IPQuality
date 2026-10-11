@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/spf13/viper"
 )
 
@@ -86,6 +87,9 @@ func (fc *FeedsConfig) Validate() error {
 		}
 		if strings.TrimSpace(feed.Schedule) == "" {
 			return fmt.Errorf("invalid feed %q: schedule is required", key)
+		}
+		if _, err := cron.ParseStandard(feed.Schedule); err != nil {
+			return fmt.Errorf("invalid feed %q schedule: %w", key, err)
 		}
 		if len(feed.Sources) == 0 {
 			return fmt.Errorf("invalid feed %q: at least one source is required", key)
