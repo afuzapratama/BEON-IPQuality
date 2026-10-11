@@ -59,8 +59,9 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 - [ ] Tetapkan expiry/retention reputasi historis dan riwayat fetch; uji IP yang hilang dari feed dan refresh parsial.
 
 - [x] Buat integration/smoke test deterministik dengan fixture feed: PostgreSQL → ingestor → compiler → API, whitelist/overlap/IPv6, reload, dan auth.
-- [ ] Uji integrasi Redis dan kegagalan dependency. Analytics diuji di phase integrasinya.
-- [ ] Verifikasi build Linux ARM64 semua binary. Workflow release lokal sudah memiliki matrix `amd64`/`arm64`; jalankan dan periksa hasilnya.
+- [x] Uji integrasi Redis dan kegagalan dependency. Analytics diuji di phase integrasinya.
+- [x] Verifikasi cross-build Linux ARM64 semua binary; hasil ELF AArch64 statically linked terkonfirmasi.
+- [ ] Jalankan workflow release binary matrix `amd64`/`arm64` dan verifikasi archive/checksum; eksekusi pada ARM asli menunggu VPS.
 - [ ] Siapkan image API/ingestor/compiler/Judge berlabel versi dan digest, publish ARM64 (atau multiarch) lewat CI; validasi base image/dependency tersedia untuk ARM64.
 - [ ] Siapkan Compose produksi memakai image release, volume persisten, rotasi log, restart policy, parameter resource dan secret dari environment host.
 - [ ] Siapkan Nginx HTTPS, loopback binding, bootstrap/upgrade dan migrasi schema terkontrol; startup SQL pada volume baru bukan sistem migrasi upgrade.
@@ -156,3 +157,12 @@ Tindak lanjut kualitas data: storage saat ini tetap menyimpan reputasi historis 
 
 
 Validasi lokal akhir phase 2: `go test -race ./...`, `scripts/test-integration.sh` (PostgreSQL 17/Redis 7), `go vet ./...`, `go build ./cmd/...`, validasi Compose, dan govulncheck v1.9.0 lulus. Scanner melaporkan 0 vulnerability terjangkau; ada temuan pada package/module yang tidak terjangkau kode sekarang. Feed internet dan beban VPS belum diuji.
+
+
+### GitHub dan validasi ARM64
+
+Phase 0 selesai: perubahan baseline dan phase 2 sudah di-commit/push ke `fix/production-readiness`; [draft PR #1](https://github.com/afuzapratama/BEON-IPQuality/pull/1) tersedia. Main belum diubah. CI GitHub untuk revision runtime `33ae82a52d65edca5264e7fd945cf371054516b4` berhasil, termasuk job verify dan integration: [hasil CI](https://github.com/afuzapratama/BEON-IPQuality/actions/runs/38181345959). Event push juga lulus pada run `38181308893`.
+
+Cross-build `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/beon-phase3-arm64/ ./cmd/...` menghasilkan api/ingestor/compiler/judge sebagai ELF AArch64 statically linked dengan Go 1.27.2. Manifest base image `golang:1.27.2-alpine` dan `alpine:3.22` mencantumkan linux/arm64. Ini verifikasi build dan manifest, bukan eksekusi aplikasi/container pada CPU ARM atau image release yang sudah dipublish.
+
+Pekerjaan berikutnya adalah sisa phase 3: kebijakan expiry/retention, kontrak API, image release, Compose produksi, migrasi upgrade, backup/restore/rollback dan runbook VPS. Akses VPS baru diperlukan pada phase 4 setelah paket deployment siap.
