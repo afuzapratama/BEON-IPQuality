@@ -46,12 +46,29 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ipquality}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks: [beon-network]
+
+  migrate:
+    image: postgres:17-alpine
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-beon}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-ipquality}
+      MIGRATIONS_DIR: /migrations
+    entrypoint: ["bash", "/scripts/migrate.sh"]
+    volumes:
+      - ./migrations:/migrations:ro
+      - ./scripts/migrate.sh:/scripts/migrate.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [beon-network]
 
   redis:
@@ -77,8 +94,8 @@ services:
     environment: *app-environment
     command: ["-config", "/app/configs/config.yaml", "-feeds", "/app/configs/feeds.yaml", "-once"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks: [beon-network]
 
   compiler-init:

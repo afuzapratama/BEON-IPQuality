@@ -57,7 +57,7 @@ MMDB_HOST_DIR=/opt/beon-ipquality/data/mmdb \
 
 Tidak ada auto-install package atau copy kredensial dari script updater. Native timer memakai `configs/systemd/beon-geoipupdate.service` dan `.timer`; env template tersedia pada `configs/geoipupdate.env.example`. Agent menyesuaikan WorkingDirectory/ExecStart/ReadWritePaths bila root proyek berbeda. `geoipupdate.env` hanya berisi path, mode 600; GeoIP.conf juga mode 600. AccountID dan LicenseKey tidak dikirim sebagai command arguments/log.
 
-Timer sekali per hari pukul 03:20 Asia/Jakarta (WIB), random delay sampai 30 menit dan Persistent. Output GeoLite2 mode 644 agar reader container dapat membacanya. Host timer adalah satu-satunya updater produksi; profil updater container pada Compose development tidak dijalankan bersamaan. Setelah update, compiler membaca ASN pada compile berikutnya dan API/Judge memeriksa checksum pada reload berikutnya. Download MaxMind nyata memerlukan kredensial pengguna; fixture test hanya memverifikasi routing path.
+Timer sekali per hari pukul 03:20 Asia/Jakarta (WIB), random delay sampai 30 menit dan Persistent. Output GeoLite2 mode 644 agar reader container dapat membacanya. Periksa cron/timer bawaan paket dan updater existing agar dataset proyek hanya mempunyai satu updater; workload lain tidak diubah tanpa pemeriksaan. Host timer adalah satu-satunya updater produksi; profil updater container pada Compose development tidak dijalankan bersamaan. Setelah update, compiler membaca ASN pada compile berikutnya dan API/Judge memeriksa checksum pada reload berikutnya. Download MaxMind nyata memerlukan kredensial pengguna; fixture test hanya memverifikasi routing path.
 
 ## Bootstrap
 
