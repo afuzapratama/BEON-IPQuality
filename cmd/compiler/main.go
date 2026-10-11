@@ -11,17 +11,19 @@ import (
 
 	"github.com/lfrfrfr/beon-ipquality/internal/compiler"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	pkglogger "github.com/lfrfrfr/beon-ipquality/pkg/logger"
 )
 
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "./configs/config.yaml", "Path to configuration file")
+	skipInitial := flag.Bool("skip-initial", false, "Skip initial compilation after validating an existing MMDB")
 	oneshot := flag.Bool("oneshot", false, "Run compilation once and exit")
 	flag.Parse()
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadFromEnv(*configPath)
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
@@ -66,14 +68,23 @@ func main() {
 		pkglogger.Info(fmt.Sprintf("Compile interval: %v", compileInterval))
 	}
 
+	if *skipInitial {
+		reader, err := mmdb.NewReader(cfg.MMDB.OutputPath, "", "")
+		if err != nil {
+			pkglogger.Fatal(fmt.Sprintf("Cannot skip initial compilation without valid snapshot: %v", err))
+		}
+		reader.Close()
+	}
 	// Start periodic compilation
 	go func() {
 		ticker := time.NewTicker(compileInterval)
 		defer ticker.Stop()
 
 		// Run initial compilation
-		if err := comp.Compile(ctx); err != nil {
-			pkglogger.Error(fmt.Sprintf("Initial compilation failed: %v", err))
+		if !*skipInitial {
+			if err := comp.Compile(ctx); err != nil {
+				pkglogger.Error(fmt.Sprintf("Initial compilation failed: %v", err))
+			}
 		}
 
 		for {

@@ -39,12 +39,16 @@ func DefaultConfig() Config {
 			"proxy":      50,
 			"datacenter": 40,
 			"botnet_c2":  95,
+			"botnet":     90,
 			"malware":    90,
+			"malicious":  85,
 			"spam":       60,
 			"hijacked":   95,
 			"attack":     75,
 			"suspicious": 55,
-			"malicious":  85,
+			"anonymous":  50, // firehol_anonymous: anonymous proxies/VPNs
+			"hosting":    35,
+			"bruteforce": 60, // brute force attackers (blocklist.de, rulez.sk)
 		},
 		ASNTypeModifiers: map[string]int{
 			"datacenter": 15,
@@ -97,8 +101,12 @@ func (s *Scorer) CalculateScore(threats []models.Threat, asnInfo *models.ASNInfo
 	threatTypes := make(map[string]bool)
 
 	for _, threat := range threats {
-		// Get base weight for threat type
-		weight := s.getThreatWeight(threat.ThreatType)
+		// Prefer the source/feed weight carried with the threat. Fall back to
+		// the threat-type defaults for older records that do not have one.
+		weight := threat.Weight
+		if weight <= 0 {
+			weight = s.getThreatWeight(threat.ThreatType)
+		}
 
 		// Apply confidence factor
 		confidence := threat.Confidence

@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build archive
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          mkdir -p dist/package
+          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.buildTime=${build_time}" -o dist/package/api ./cmd/api
+          CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime=${build_time}" -o dist/package/ingestor ./cmd/ingestor
+          CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o dist/package/compiler ./cmd/compiler
+          CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o dist/package/judge ./cmd/judge
+          cp -r configs migrations LICENSE README.md dist/package/
+          tar -C dist/package -czf "dist/beon-ipquality_${VERSION}_linux_${GOARCH}.tar.gz" .
+          sha256sum dist/*.tar.gz > "dist/beon-ipquality_${VERSION}_linux_${GOARCH}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.goarch }}
+          path: dist/beon-ipquality_*
+
+  publish:
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes --verify-tag

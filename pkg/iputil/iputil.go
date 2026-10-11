@@ -77,23 +77,28 @@ func ParseIPOrPrefix(s string) (addr netip.Addr, prefix netip.Prefix, isPrefix b
 	return addr, netip.Prefix{}, false, nil
 }
 
-// ParseIPPort parses an IP:PORT string
+// ParseIPPort parses an IP:PORT string, supporting both IPv4 and IPv6.
+// IPv6 addresses must be enclosed in brackets, e.g. [::1]:8080.
 func ParseIPPort(s string) (netip.Addr, int, error) {
 	s = strings.TrimSpace(s)
 
-	parts := strings.Split(s, ":")
-	if len(parts) != 2 {
+	// net.SplitHostPort handles both IPv4 (1.2.3.4:80) and
+	// IPv6 ([::1]:80) correctly.
+	host, portStr, err := net.SplitHostPort(s)
+	if err != nil {
+		// Fallback: plain "IP PORT" without colon separator is not
+		// supported – surface the original error.
 		return netip.Addr{}, 0, fmt.Errorf("invalid IP:PORT format: %s", s)
 	}
 
-	addr, err := ParseIP(parts[0])
+	addr, err := ParseIP(host)
 	if err != nil {
 		return netip.Addr{}, 0, err
 	}
 
-	port, err := strconv.Atoi(parts[1])
+	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 0 || port > 65535 {
-		return netip.Addr{}, 0, fmt.Errorf("invalid port number: %s", parts[1])
+		return netip.Addr{}, 0, fmt.Errorf("invalid port number: %s", portStr)
 	}
 
 	return addr, port, nil
@@ -147,10 +152,13 @@ func IsValid(addr netip.Addr) bool {
 	if addr.IsMulticast() {
 		return false
 	}
+	if addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsInterfaceLocalMulticast() {
+		return false
+	}
 	if addr.IsUnspecified() {
 		return false
 	}
-	return true
+	return addr.IsGlobalUnicast()
 }
 
 // NormalizeIP normalizes an IP address (IPv4-mapped IPv6 to IPv4)

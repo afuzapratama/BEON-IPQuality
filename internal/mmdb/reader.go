@@ -29,14 +29,16 @@ type ReputationRecord struct {
 	IsAttacker   bool `maxminddb:"is_attacker"`
 
 	// Primary threat type
-	ThreatType string `maxminddb:"threat_type"`
+	ThreatType  string   `maxminddb:"threat_type"`
+	ThreatTypes []string `maxminddb:"threat_types"`
 
 	// Confidence (0-100 stored as int)
 	Confidence int `maxminddb:"confidence"`
 
 	// Source information
-	Sources    []string `maxminddb:"sources"`
-	LastUpdate int64    `maxminddb:"last_update"` // Unix timestamp
+	Sources     []string `maxminddb:"sources"`
+	LastUpdate  int64    `maxminddb:"last_update"` // Unix timestamp
+	Whitelisted bool     `maxminddb:"whitelisted"`
 
 	// Geo information (optional, may be in separate DB)
 	Country     string `maxminddb:"country,omitempty"`
@@ -108,22 +110,32 @@ func (r *Reader) Close() error {
 		if err := r.reputationDB.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		r.reputationDB = nil
 	}
 	if r.geoipDB != nil {
 		if err := r.geoipDB.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		r.geoipDB = nil
 	}
 	if r.asnDB != nil {
 		if err := r.asnDB.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		r.asnDB = nil
 	}
 
 	if len(errs) > 0 {
 		return fmt.Errorf("errors closing databases: %v", errs)
 	}
 	return nil
+}
+
+// IsReady reports whether reputation lookups can be served safely.
+func (r *Reader) IsReady() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.reputationDB != nil
 }
 
 // Reload reloads all databases (hot reload)
@@ -178,7 +190,9 @@ func (r *Reader) LookupReputation(ip netip.Addr) (*ReputationRecord, error) {
 		return nil, fmt.Errorf("reputation database not loaded")
 	}
 
-	netIP := net.IP(ip.AsSlice())
+	// Unmap IPv4-in-IPv6 (e.g. ::ffff:1.2.3.4 → 1.2.3.4) so MaxMind
+	// receives the canonical 4-byte representation for IPv4 databases.
+	netIP := net.IP(ip.Unmap().AsSlice())
 	var record ReputationRecord
 
 	err := r.reputationDB.Lookup(netIP, &record)
@@ -187,7 +201,7 @@ func (r *Reader) LookupReputation(ip netip.Addr) (*ReputationRecord, error) {
 	}
 
 	// Check if record is empty (IP not found in database)
-	if record.RiskScore == 0 && record.ThreatType == "" {
+	if record.RiskScore == 0 && record.ThreatType == "" && !record.Whitelisted {
 		return nil, nil // Not found, but not an error
 	}
 
@@ -223,7 +237,7 @@ func (r *Reader) LookupGeoIP(ip netip.Addr) (*models.GeoInfo, error) {
 		return nil, nil // GeoIP not available
 	}
 
-	netIP := net.IP(ip.AsSlice())
+	netIP := net.IP(ip.Unmap().AsSlice())
 	var record GeoIPRecord
 
 	err := r.geoipDB.Lookup(netIP, &record)
@@ -268,7 +282,7 @@ func (r *Reader) LookupASN(ip netip.Addr) (*models.ASNInfo, error) {
 		return nil, nil // ASN DB not available
 	}
 
-	netIP := net.IP(ip.AsSlice())
+	netIP := net.IP(ip.Unmap().AsSlice())
 	var record ASNRecord
 
 	err := r.asnDB.Lookup(netIP, &record)
@@ -291,23 +305,31 @@ func (r *Reader) LookupAll(ip netip.Addr) (*models.IPCheckResult, error) {
 	// Lookup reputation
 	rep, err := r.LookupReputation(ip)
 	if err != nil {
-		logger.Debug(fmt.Sprintf("Reputation lookup error for %s: %v", ip, err))
+		return nil, fmt.Errorf("reputation lookup for %s failed: %w", ip, err)
 	}
 	if rep != nil {
-		result.Score = rep.RiskScore
-		result.RiskScore = rep.RiskScore
-		result.RiskLevel = rep.RiskLevel
-		result.IsTor = rep.IsTor
-		result.IsVPN = rep.IsVPN
-		result.IsProxy = rep.IsProxy
-		result.IsDatacenter = rep.IsDatacenter
-		result.IsBotnet = rep.IsBotnet
-		result.IsMalware = rep.IsMalware
-		result.IsSpam = rep.IsSpam
-		result.IsAttacker = rep.IsAttacker
-		result.ThreatTypes = rep.Sources
-		if rep.ThreatType != "" {
-			result.ThreatTypes = append([]string{rep.ThreatType}, result.ThreatTypes...)
+		if rep.Whitelisted {
+			result.Score = 0
+			result.RiskScore = 0
+			result.RiskLevel = "clean"
+			result.Whitelisted = true
+		} else {
+			result.Score = rep.RiskScore
+			result.RiskScore = rep.RiskScore
+			result.RiskLevel = rep.RiskLevel
+			result.IsTor = rep.IsTor
+			result.IsVPN = rep.IsVPN
+			result.IsProxy = rep.IsProxy
+			result.IsDatacenter = rep.IsDatacenter
+			result.IsBotnet = rep.IsBotnet
+			result.IsMalware = rep.IsMalware
+			result.IsSpam = rep.IsSpam
+			result.IsAttacker = rep.IsAttacker
+			result.ThreatTypes = rep.ThreatTypes
+			result.Sources = rep.Sources
+			if len(result.ThreatTypes) == 0 && rep.ThreatType != "" {
+				result.ThreatTypes = []string{rep.ThreatType}
+			}
 		}
 	} else {
 		result.Score = 0

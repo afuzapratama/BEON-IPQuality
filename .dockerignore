@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+build
+dist
+coverage.out
+coverage.html
+logs
+*.log
+*.mmdb
+data/*
+!data/mmdb
+data/mmdb/*
+!data/mmdb/.gitkeep

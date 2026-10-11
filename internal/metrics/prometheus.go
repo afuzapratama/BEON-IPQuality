@@ -1,9 +1,29 @@
 package metrics
 
 import (
+	"strconv"
+	"sync/atomic"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var (
+	totalRequests      atomic.Int64
+	totalRequestErrors atomic.Int64
+	totalCheckedIPs    atomic.Int64
+	totalDurationNS    atomic.Int64
+)
+
+// Snapshot is a process-lifetime API statistics snapshot.
+type Snapshot struct {
+	TotalRequests   int64
+	TotalIPs        int64
+	AvgResponseTime float64
+	ErrorRate       float64
+}
 
 var (
 	// HTTPRequestsTotal counts total HTTP requests
@@ -196,8 +216,44 @@ var (
 	)
 )
 
+// HTTPMiddleware records route-template labels to avoid putting raw IP
+// parameters into Prometheus and creating an unbounded number of time series.
+func HTTPMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		duration := time.Since(start)
+		status := c.Response().StatusCode()
+		endpoint := c.Route().Path
+		if endpoint == "" {
+			endpoint = "unmatched"
+		}
+		HTTPRequestsTotal.WithLabelValues(c.Method(), endpoint, strconv.Itoa(status)).Inc()
+		HTTPRequestDuration.WithLabelValues(c.Method(), endpoint).Observe(duration.Seconds())
+		totalRequests.Add(1)
+		totalDurationNS.Add(duration.Nanoseconds())
+		if status >= 400 || err != nil {
+			totalRequestErrors.Add(1)
+		}
+		return err
+	}
+}
+
+// Stats returns process-lifetime request statistics without scraping Prometheus.
+func Stats() Snapshot {
+	requests := totalRequests.Load()
+	errors := totalRequestErrors.Load()
+	snapshot := Snapshot{TotalRequests: requests, TotalIPs: totalCheckedIPs.Load()}
+	if requests > 0 {
+		snapshot.AvgResponseTime = float64(totalDurationNS.Load()) / float64(requests) / float64(time.Millisecond)
+		snapshot.ErrorRate = float64(errors) / float64(requests)
+	}
+	return snapshot
+}
+
 // RecordIPCheck records an IP check metric
 func RecordIPCheck(riskLevel string, cached bool, durationMs float64, source string) {
+	totalCheckedIPs.Add(1)
 	cachedStr := "false"
 	if cached {
 		cachedStr = "true"

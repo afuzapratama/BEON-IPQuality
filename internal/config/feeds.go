@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -67,8 +68,41 @@ func LoadFeeds(configPath string) (*FeedsConfig, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal feeds config: %w", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
+}
+
+// Validate catches enabled feeds that would otherwise fail silently at runtime.
+func (fc *FeedsConfig) Validate() error {
+	for key, feed := range fc.Feeds {
+		if !feed.Enabled {
+			continue
+		}
+		if strings.TrimSpace(feed.Name) == "" {
+			return fmt.Errorf("invalid feed %q: name is required", key)
+		}
+		if strings.TrimSpace(feed.Schedule) == "" {
+			return fmt.Errorf("invalid feed %q: schedule is required", key)
+		}
+		if len(feed.Sources) == 0 {
+			return fmt.Errorf("invalid feed %q: at least one source is required", key)
+		}
+		for _, source := range feed.Sources {
+			if strings.TrimSpace(source.URL) == "" || strings.TrimSpace(source.Name) == "" {
+				return fmt.Errorf("invalid feed %q: every source requires url and name", key)
+			}
+			if _, exists := fc.Formats[source.Format]; !exists {
+				return fmt.Errorf("invalid feed %q source %q: unknown format %q", key, source.Name, source.Format)
+			}
+		}
+	}
+	if fc.Whitelist.Enabled && len(fc.Whitelist.Sources) == 0 {
+		return fmt.Errorf("invalid whitelist: at least one source is required when enabled")
+	}
+	return nil
 }
 
 // GetEnabledFeeds returns only enabled feeds

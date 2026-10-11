@@ -1,0 +1,138 @@
+# Phase perbaikan dan deployment VPS ARM
+
+Tanggal: 11 Oktober 2026. Dasar: [audit docs dan implementasi](AUDIT_DOCS_IMPLEMENTASI_2026-10-11.md). Semua checkbox adalah pekerjaan yang belum dinyatakan selesai; keberadaan kode/workflow tidak otomatis membuktikan hasil deployment.
+
+## Arah deployment
+
+Target awal adalah satu VPS Linux ARM64 dengan Docker Compose dan Nginx host untuk HTTPS, tanpa aaPanel. Pipeline: feed → PostgreSQL → compiler → volume MMDB → API → Nginx → pengguna. Redis dievaluasi lewat benchmark. Judge tetap opsional dan hanya untuk akses internal. ClickHouse, Grafana, dan stack monitoring lengkap tidak wajib dinyalakan pada pilot pertama.
+
+Monitoring server awal memakai **Glances**, dipasang native sebagai service systemd agar metrik host terbaca tanpa menjalankan panel administrasi. Pantau CPU, RAM/swap, load, traffic RX/TX, disk I/O, kapasitas filesystem, dan proses. Gunakan tampilan terminal atau web pada loopback melalui SSH tunnel. Interval awal 5 detik; ukur overhead pada VPS sebelum menetapkan konfigurasi akhir. Glances mendukung metrik jaringan, disk I/O, dan container; lihat [situs resmi](https://nicolargo.github.io/glances/). Ini pilihan untuk pemantauan langsung, bukan pengganti histori metrik dan alerting aplikasi.
+
+Jika histori dan alert host diperlukan, evaluasi **Netdata Agent standalone** pada phase observability; agent dapat dijalankan gratis dan mendukung AArch64. Batasi retention/collector berdasarkan RAM dan disk. Referensi: [standalone gratis](https://www.netdata.cloud/homelab/), [platform support](https://learn.netdata.cloud/docs/netdata-agent/versions-%26-platforms). Tidak mengasumsikan layanan Netdata Cloud gratis untuk penggunaan komersial.
+
+## Alur dan dependency
+
+Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitoring, dan deployment bisa berlangsung selama phase 1–3. Akses VPS baru diperlukan ketika memasuki phase 4. Phase 7 adalah pengembangan lanjutan setelah kebutuhan kapasitas/fitur terukur.
+
+| Phase | Fokus | Perlu VPS? | Kriteria selesai |
+| --- | --- | --- | --- |
+| 0 | Baseline dan GitHub | Tidak | Revision sumber jelas, akses remote terverifikasi, perubahan lokal terjaga |
+| 1 | Perbaikan dasar produksi | Tidak | Limiter/admin/bootstrap benar dan test terkait lulus |
+| 2 | Pipeline dan kualitas data | Tidak | Scoring/config/freshness/reload konsisten dan teruji |
+| 3 | Pengujian serta paket ARM64 | Tidak | Smoke test, CI, artefak ARM64, dan runbook siap |
+| 4 | Persiapan VPS dan monitoring ringan | Ya | Host ARM64 diperiksa, runtime/monitoring siap |
+| 5 | Pilot deployment | Ya | Pipeline nyata, HTTPS, restart, backup/restore dan rollback teruji |
+| 6 | Observability dan validasi kapasitas | Ya | Beban/overhead terukur, alert operasional dan docs final siap |
+| 7 | Fitur lanjutan dan multi-node | Sesuai kebutuhan | Analytics/key pelanggan/distribusi teruji sesuai scope yang dipilih |
+
+## Phase 0 — Baseline dan GitHub
+
+- [ ] Inventarisasi perubahan tracked/untracked yang sudah ada; review sebelum commit agar data/secret/artefak lokal tidak ikut.
+- [x] Buat branch perbaikan dari baseline yang diketahui dan commit pekerjaan dalam bagian yang bisa direview.
+- [ ] Verifikasi akses baca/tulis GitHub serta status CI/release remote. Remote lokal sudah menunjuk `git@github.com:afuzapratama/BEON-IPQuality.git`, branch `main`; ini belum sama dengan bukti akses push.
+- [ ] Tetapkan tracker ini sebagai acuan pekerjaan berikutnya, dengan bukti test/commit untuk setiap status selesai.
+
+## Phase 1 — Perbaikan dasar produksi
+
+- [x] Terapkan trusted proxy terbatas dan uji spoofed forwarding headers; limiter memakai identitas/key sesuai kebutuhan, bukan semua klien proxy berbagi kuota.
+- [x] Keluarkan health/metrics dari limiter lookup; uji tetap dapat diakses saat kuota habis.
+- [x] Pisahkan kredensial/akses admin dari lookup; reload/clear cache hanya melalui akses internal.
+- [x] Bootstrap compiler harus gagal bila tidak menghasilkan artefak MMDB valid; tangani feed gagal dan dataset kosong secara eksplisit.
+- [x] Selaraskan konfigurasi Nginx/script domain agar Judge dan monitoring tidak dipublikasikan otomatis.
+- [x] Hilangkan kerja ingest/compile awal ganda setelah init, dengan mekanisme yang tetap memverifikasi snapshot valid.
+- [x] Tambahkan test perilaku di atas dan jalankan unit test, race, vet, build serta vulnerability scan.
+
+## Phase 2 — Pipeline dan kualitas data
+
+- [ ] Hubungkan konfigurasi scoring ke compiler; pastikan bobot feed dan decay diterapkan sesuai kontrak.
+- [ ] Tentukan klasifikasi ASN dari sumber yang tersedia dan hubungkan modifier ASN; uji perbedaan metadata ASN dan sinyal risiko.
+- [ ] Tetapkan SLA freshness per feed. Ukur waktu ingest/compile/reload; target proposal <1 jam tidak bisa dijamin hanya dengan compile interval 1 jam.
+- [ ] Tambahkan versi/checksum snapshot dan waktu sukses ingest/compile; health/status membedakan data tersedia dari data stale.
+- [ ] Reload hanya pada versi berubah, invalidasi cache konsisten, snapshot lama tetap tersedia bila reload gagal.
+- [ ] Lengkapi notifikasi reload Judge jika profil Judge dipakai; bila tetap polling, dokumentasikan batas keterlambatannya dan tutup TODO dengan desain yang jelas.
+- [ ] Batasi waktu operasi cache dan uji fallback Redis lambat/mati; pertahankan lookup MMDB yang valid.
+- [ ] Tambahkan metrik ingest, compile, freshness, reload dan scanner yang benar-benar di-update.
+- [ ] Neighborhood analysis masuk phase 7 sampai kebutuhan/akurasi terukur; jangan tetap diklaim sebagai fitur selesai.
+
+## Phase 3 — Pengujian, dokumen, dan paket ARM64
+
+- [ ] Buat integration/smoke test deterministik dengan fixture feed: PostgreSQL → ingestor → compiler → API, whitelist/overlap/IPv6, reload, dan auth.
+- [ ] Uji integrasi Redis dan kegagalan dependency. Analytics diuji di phase integrasinya.
+- [ ] Verifikasi build Linux ARM64 semua binary. Workflow release lokal sudah memiliki matrix `amd64`/`arm64`; jalankan dan periksa hasilnya.
+- [ ] Siapkan image API/ingestor/compiler/Judge berlabel versi dan digest, publish ARM64 (atau multiarch) lewat CI; validasi base image/dependency tersedia untuk ARM64.
+- [ ] Siapkan Compose produksi memakai image release, volume persisten, rotasi log, restart policy, parameter resource dan secret dari environment host.
+- [ ] Siapkan Nginx HTTPS, loopback binding, bootstrap/upgrade dan migrasi schema terkontrol; startup SQL pada volume baru bukan sistem migrasi upgrade.
+- [ ] Tulis backup PostgreSQL/config/MMDB, retention, salinan di luar VPS, restore terisolasi dan rollback aplikasi+snapshot+schema.
+- [ ] Siapkan OpenAPI/API docs dan selaraskan proposal: status phase, versi Go aktual, schema INET/CIDR, response, health, startup Railway, dan angka benchmark historis.
+- [ ] Pastikan CI remote lulus pada revision yang akan dideploy. Catat tag/digest dan checksum artefak.
+
+**Gate VPS:** setelah phase 1–3 siap, informasikan pengguna bahwa akses VPS diperlukan untuk phase 4. Jangan memasang atau mengubah server sebelum akses dan targetnya tersedia.
+
+## Phase 4 — Persiapan VPS ARM dan monitoring ringan
+
+Informasi yang diperlukan saat gate ini: IP/hostname, port SSH, username, lokasi file SSH private key yang bisa dipakai di environment kerja, status sudo, OS/versi, vCPU/RAM/disk, layanan yang sudah berjalan, serta domain API bila tersedia. Kunci privat tidak dicantumkan dalam docs/commit/log.
+
+- [ ] Periksa host identity, arsitektur nyata (`aarch64`/ARM64), OS, resource, ruang disk, port dan service yang sudah ada; ARM32 memerlukan penyesuaian paket/build.
+- [ ] Tentukan apakah database/pipeline penuh muat pada VPS dari kebutuhan peak RAM compiler, bukan hanya RAM API idle.
+- [ ] Pasang Docker Engine/Compose dan Nginx yang sesuai host; jangan menimpa service existing tanpa pemeriksaan.
+- [ ] Atur direktori deployment, permission secret, volume persisten, firewall dan akses SSH yang tetap berfungsi.
+- [ ] Pasang Glances native, service systemd dan akses loopback; verifikasi CPU/RAM/network/disk I/O terbaca serta ukur overhead.
+- [ ] Tentukan tujuan backup di luar VPS dan kanal alert dengan pengguna; data ini dibutuhkan untuk melengkapi operasi produksi.
+
+## Phase 5 — Pilot deployment satu instance
+
+- [ ] Tarik revision/image ARM64 yang sudah lolos CI; simpan manifest deployment berisi versi/digest.
+- [ ] Bootstrap PostgreSQL, ingest feed nyata, compile dan validasi MMDB, lalu API. Catat feed gagal/jumlah data/durasi tanpa menganggap angka historis masih berlaku.
+- [ ] Aktifkan GeoLite2 hanya jika kredensial MaxMind tersedia; Judge tetap dinonaktifkan kecuali diperlukan.
+- [ ] Uji health, auth benar/salah, single/batch IPv4/IPv6, whitelist, reload, cache fallback dan data freshness.
+- [ ] Sambungkan domain/HTTPS; uji route admin/metrics/Judge tetap internal dan limiter melalui Nginx.
+- [ ] Uji restart/reboot, scheduler tanpa duplikasi, log rotation dan volume tetap tersedia.
+- [ ] Jalankan backup pertama, restore pada target terisolasi, serta simulasi rollback revision/snapshot; dokumentasikan hasil dan batas rollback schema.
+- [ ] Simpan baseline CPU/RAM/network/disk I/O dari Glances selama ingest/compile/lookup.
+
+Pilot dinyatakan berhasil berdasarkan pemeriksaan ini; layanan produksi belum dianggap siap hanya karena container `running`.
+
+## Phase 6 — Observability, kapasitas, dan penyelesaian produksi
+
+- [ ] Jalankan load-test bertahap, ukur p50/p95/p99, throughput, error rate, peak RAM compiler, disk I/O dan overhead monitoring.
+- [ ] Bandingkan dengan/tanpa Redis serta batch; pilih konfigurasi dari hasil pengukuran. Target 100k req/s tetap target hingga dibuktikan pada hardware nyata.
+- [ ] Tambahkan alert service down, disk penuh, memory pressure, feed/compile gagal dan data stale; uji notifikasi benar-benar diterima.
+- [ ] Jika butuh histori, pilih Netdata standalone yang dibatasi resource atau Prometheus retention terbatas; Grafana/ClickHouse/Loki diaktifkan hanya jika kebutuhan dan resource mendukung.
+- [ ] Ukur waktu pemulihan dan kehilangan data dari restore drill; finalkan retention/log/resource/connection pool.
+- [ ] Tetapkan runbook insiden, penanggung jawab operasional, jadwal update/backup, dan hasil security review pada revision final.
+- [ ] Catat batas kapasitas yang terukur dan semua pengecualian scope sebelum menyatakan siap produksi.
+
+## Phase 7 — Analytics, pelanggan, dan multi-node
+
+Phase ini tidak menghalangi pilot internal. Sebelum menyatakan proposal lengkap, setiap item harus diimplementasikan dan teruji atau secara eksplisit dikeluarkan dari scope.
+
+- [ ] Hubungkan ClickHouse ke lifecycle API/Judge, request/scan logging, identitas key yang di-hash, flush berkala/shutdown, retention dan test integrasi; kehilangan log saat error harus terukur.
+- [ ] Jika melayani banyak pelanggan, hubungkan tabel key dengan middleware, scope admin/lookup, rotasi/revoke, kuota dan audit perubahan.
+- [ ] Evaluasi neighborhood analysis dan validasi false positive sebelum dipakai scoring produksi.
+- [ ] Distribusi MMDB multi-node: satu pipeline pusat, artefak berversi/checksum, transfer sementara, validasi, atomic rename, reload, health, rollback dan cache sesuai versi.
+- [ ] Optimasi streaming/agregasi compiler dan paralelisasi batch bila benchmark menunjukkan bottleneck.
+- [ ] Kubernetes hanya dipersiapkan jika kebutuhan orkestrasi nyata sudah ada; satu VPS memakai Compose.
+
+## Bukti dan status awal
+
+- Audit lokal sebelumnya: `go test ./...` dan `go vet ./...` lulus; ini belum menguji layanan produksi.
+- Akses baca `git ls-remote origin HEAD` berhasil pada 11 Oktober 2026; remote HEAD menunjuk `3be39cea874a2f544e94692b577e780dfbd27f8c`. Akses push dan hasil CI remote belum diverifikasi.
+- Dokumen phase ini merupakan rencana pelaksanaan, bukan perbaikan runtime yang sudah selesai.
+- Belum ada koneksi atau deployment ke VPS; pengguna akan menyediakan akses ketika dibutuhkan.
+
+
+## Progres 12 Oktober 2026
+
+Branch lokal `fix/production-readiness` dibuat tanpa membuang perubahan yang sudah ada. Remote GitHub dapat dibaca dan akun aktif memiliki permission ADMIN pada repository; belum ada workflow/run di remote. Workflow lokal belum dipush. Review baseline, commit/push dan CI remote tetap pending.
+
+Implementasi phase 1: `ADMIN_API_KEY` terpisah (kosong menonaktifkan admin); lookup rate limit setelah auth per hash key; health/metrics di luar limiter; `TRUSTED_PROXIES` eksplisit dengan `X-Real-IP` dan validasi IP. Nginx menimpa forwarding header; listener dashboard/Judge/Prometheus/exporter lama bind loopback dan script tidak membuka portnya melalui UFW. Cache management publik ditolak; reload proxy dibatasi loopback. Key lookup lama tidak lagi mengakses cache/reload.
+
+Compiler menolak publish dataset kosong dan mempertahankan snapshot lama. Daemon Compose memakai skip initial ingest/compile setelah memeriksa snapshot bisa dibuka; init tetap melakukan bootstrap. Test mencakup missing snapshot, empty compilation, key admin/lookup, operational endpoint ketika kuota habis, proxy dipercaya/tidak dipercaya, dan override environment. Pengujian restart dan integrasi container nyata tetap phase 3/5; pengujian ini tidak menjamin freshness snapshot.
+
+Validasi pada Go host: unit test, race suite, vet, build, `docker compose config --quiet` dengan secret dummy, `bash -n scripts/setup-domain.sh`, dan `git diff --check` lulus. Go 1.25.3 dan vulnerability scan diperiksa terpisah; hasil final dicatat setelah pemeriksaan selesai. Akses VPS belum diperlukan.
+
+
+Pemeriksaan keamanan baseline Go 1.25.3 mendeteksi 30 vulnerability ID yang terjangkau pada standard library dan `golang.org/x/text`. Toolchain proyek/Docker dinaikkan ke Go 1.27.2 (rilis stabil yang diverifikasi dari [Go downloads](https://go.dev/dl/?mode=json)); `x/text` diperbarui ke v0.41.0 dan dependency `x/sync` ke v0.22.0. CI memakai govulncheck v1.9.0. Pemindaian ulang dengan toolchain tersebut exit 0, tanpa vulnerability terjangkau. Referensi perbaikan x/text: [GO-2026-6629](https://pkg.go.dev/vuln/GO-2026-6629). Ini hasil static reachability scan, bukan security audit deployment penuh.
+
+
+Hasil akhir validasi phase 1 pada Go 1.27.2: `go test -race ./...`, `go vet ./...`, `go build ./cmd/...`, dan govulncheck v1.9.0 lulus. Seluruh checklist implementasi lokal phase 1 selesai; acceptance di container/VPS dan security review produksi tetap phase berikutnya. Phase 0 belum selesai karena review baseline dan commit/push/CI remote masih pending.

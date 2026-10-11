@@ -2,9 +2,13 @@ package ingestor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
+	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +17,7 @@ import (
 
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
 	"github.com/lfrfrfr/beon-ipquality/internal/database"
+	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	"github.com/lfrfrfr/beon-ipquality/pkg/iputil"
 	"github.com/lfrfrfr/beon-ipquality/pkg/logger"
 	"github.com/lfrfrfr/beon-ipquality/pkg/models"
@@ -47,6 +52,13 @@ func New(cfg *config.Config, feedsCfg *config.FeedsConfig, db *database.Postgres
 
 // Start starts the ingestor service
 func (i *Ingestor) Start(ctx context.Context) error {
+	if i.config.Ingestor.SkipInitial {
+		reader, err := mmdb.NewReader(i.config.MMDB.ReputationPath, "", "")
+		if err != nil {
+			return fmt.Errorf("cannot skip initial ingestion without valid snapshot: %w", err)
+		}
+		reader.Close()
+	}
 	i.mu.Lock()
 	if i.running {
 		i.mu.Unlock()
@@ -72,11 +84,25 @@ func (i *Ingestor) Start(ctx context.Context) error {
 	}
 
 	// Start cron scheduler
+	if i.feedsConfig.Whitelist.Enabled {
+		if _, err := i.cron.AddFunc("@daily", func() {
+			if _, syncErr := i.processWhitelists(ctx); syncErr != nil {
+				logger.Error(fmt.Sprintf("Failed to refresh whitelists: %v", syncErr))
+			}
+		}); err != nil {
+			logger.Error(fmt.Sprintf("Failed to schedule whitelist refresh: %v", err))
+		}
+	}
 	i.cron.Start()
 
-	// Run initial fetch for all feeds
-	logger.Info("Running initial fetch for all feeds...")
-	i.runAllFeeds(ctx)
+	if !i.config.Ingestor.SkipInitial {
+		// Run initial fetch for all feeds
+		logger.Info("Running initial fetch for all feeds...")
+		i.runAllFeeds(ctx)
+		if _, err := i.processWhitelists(ctx); err != nil {
+			logger.Error(fmt.Sprintf("Initial whitelist sync failed: %v", err))
+		}
+	}
 
 	// Wait for context cancellation
 	<-ctx.Done()
@@ -105,7 +131,7 @@ func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, total
 
 	// Results tracking with mutex for thread safety
 	var mu sync.Mutex
-	var errors []error
+	var runErrors []error
 
 	// Use semaphore for concurrency control
 	sem := make(chan struct{}, i.config.Ingestor.Concurrency)
@@ -124,7 +150,7 @@ func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, total
 			totalEntries += entries
 			totalStored += stored
 			if feedErr != nil {
-				errors = append(errors, feedErr)
+				runErrors = append(runErrors, feedErr)
 			}
 			mu.Unlock()
 		}(name, feed)
@@ -133,9 +159,10 @@ func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, total
 	// Wait for all feeds to complete
 	i.wg.Wait()
 
-	if len(errors) > 0 {
-		err = fmt.Errorf("%d feed(s) had errors", len(errors))
+	if _, whitelistErr := i.processWhitelists(ctx); whitelistErr != nil {
+		runErrors = append(runErrors, whitelistErr)
 	}
+	err = errors.Join(runErrors...)
 
 	return
 }
@@ -184,7 +211,7 @@ func (i *Ingestor) processFeed(ctx context.Context, feedName string, feedConfig 
 		}
 
 		// Store entries
-		if err := i.storeEntries(entries); err != nil {
+		if err := i.storeEntries(ctx, entries); err != nil {
 			logger.Error(fmt.Sprintf("Failed to store entries for %s/%s: %v", feedName, source.Name, err))
 			continue
 		}
@@ -202,6 +229,7 @@ func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, fe
 	fmt.Printf("\033[0;34m[*]\033[0m Processing feed: %s\n", feedName)
 	startTime := time.Now()
 
+	var sourceErrors []error
 	for _, source := range feedConfig.Sources {
 		select {
 		case <-ctx.Done():
@@ -212,15 +240,17 @@ func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, fe
 		entries, fetchErr := i.fetchSource(ctx, source, feedConfig)
 		if fetchErr != nil {
 			fmt.Printf("\033[0;31m[✗]\033[0m   Source %s: %v\n", source.Name, fetchErr)
+			sourceErrors = append(sourceErrors, fmt.Errorf("%s: %w", source.Name, fetchErr))
 			continue
 		}
 
 		totalEntries += len(entries)
 
 		// Store entries and get count
-		stored, storeErr := i.storeEntriesWithCount(entries)
+		stored, storeErr := i.storeEntriesWithCount(ctx, entries)
 		if storeErr != nil {
 			fmt.Printf("\033[0;31m[✗]\033[0m   Source %s: store error: %v\n", source.Name, storeErr)
+			sourceErrors = append(sourceErrors, fmt.Errorf("%s: %w", source.Name, storeErr))
 			continue
 		}
 
@@ -231,64 +261,78 @@ func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, fe
 	elapsed := time.Since(startTime)
 	fmt.Printf("\033[0;32m[✓]\033[0m Completed %s: %d entries in %v\n", feedName, totalEntries, elapsed.Round(time.Millisecond))
 
-	return totalEntries, totalStored, nil
+	return totalEntries, totalStored, errors.Join(sourceErrors...)
 }
 
 // fetchSource fetches and parses a single source
 func (i *Ingestor) fetchSource(ctx context.Context, source config.SourceConfig, feedConfig config.FeedConfig) ([]models.FeedEntry, error) {
-	// Create request with context
-	req, err := http.NewRequestWithContext(ctx, "GET", source.URL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("User-Agent", i.config.Ingestor.UserAgent)
-
-	// Retry logic
+	// Retry logic: create a fresh request for each attempt so that the
+	// request object is never reused after a response has been read.
 	var resp *http.Response
+	var err error
+	var lastStatus int
 	for attempt := 0; attempt <= i.config.Ingestor.MaxRetries; attempt++ {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", source.URL, nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		req.Header.Set("User-Agent", i.config.Ingestor.UserAgent)
+
 		resp, err = i.httpClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			break
 		}
 
 		if resp != nil {
+			lastStatus = resp.StatusCode
 			resp.Body.Close()
+			resp = nil
 		}
 
 		if attempt < i.config.Ingestor.MaxRetries {
-			time.Sleep(i.config.Ingestor.RetryDelay)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(i.config.Ingestor.RetryDelay):
+			}
 		}
 	}
 
+	if resp == nil && lastStatus != 0 {
+		return nil, fmt.Errorf("unexpected status code after retries: %d", lastStatus)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch after %d retries: %w", i.config.Ingestor.MaxRetries, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	// Read body
-	body, err := io.ReadAll(resp.Body)
+	// Limit body read to 100 MB and reject truncated feeds.
+	const maxBodyBytes = 100 * 1024 * 1024
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+	if len(body) > maxBodyBytes {
+		return nil, fmt.Errorf("feed exceeds maximum size of %d bytes", maxBodyBytes)
+	}
 
 	// Parse based on format
-	return i.parseContent(string(body), source.Format, feedConfig)
+	entries, err := i.parseContent(string(body), source.Format, feedConfig, source.Name)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("feed returned no valid IP entries")
+	}
+	return entries, nil
 }
 
 // parseContent parses the content based on format
-func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedConfig) ([]models.FeedEntry, error) {
+func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedConfig, sourceName string) ([]models.FeedEntry, error) {
 	var entries []models.FeedEntry
 
 	lines := strings.Split(content, "\n")
 	now := time.Now()
-
-	// Get format configuration
-	formatConfig, _ := i.feedsConfig.GetFormat(format)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -298,13 +342,9 @@ func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedCo
 			continue
 		}
 
-		// Skip comments
-		if formatConfig.CommentPrefix != "" && strings.HasPrefix(line, formatConfig.CommentPrefix) {
-			continue
-		}
-
-		// Also skip common comment prefixes
-		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "//") {
+		// Skip common comment / metadata prefixes shared by all formats.
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") ||
+			strings.HasPrefix(line, "//") {
 			continue
 		}
 
@@ -312,7 +352,18 @@ func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedCo
 
 		switch format {
 		case "ip_port":
-			// Format: IP:PORT
+			// Format: IP:PORT (plain or with comments after whitespace)
+			// Strip any trailing comment first.
+			if idx := strings.IndexAny(line, " \t#"); idx != -1 {
+				line = strings.TrimSpace(line[:idx])
+			}
+			if strings.Contains(line, "://") {
+				parsed, err := url.Parse(line)
+				if err != nil || parsed.Host == "" {
+					continue
+				}
+				line = parsed.Host
+			}
 			addr, _, err := iputil.ParseIPPort(line)
 			if err != nil {
 				continue
@@ -320,13 +371,66 @@ func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedCo
 			ipStr = addr.String()
 
 		case "cidr_comments":
-			// Format: CIDR ; comment
+			// Format: CIDR ; comment  (Spamhaus DROP/EDROP)
 			parts := strings.SplitN(line, ";", 2)
 			ipStr = strings.TrimSpace(parts[0])
 
-		default:
-			// Plain format - just the IP or CIDR
+		case "netset":
+			// FireHOL .netset: optionally has metadata lines like "Name= ..."
+			// or lines starting with a digit/colon which are CIDR/IP entries.
+			// Lines that don't start with a digit or ':' (IPv6) are skipped.
+			first := line[0]
+			if first != ':' && (first < '0' || first > '9') {
+				continue
+			}
+			// Strip inline comments
+			if idx := strings.IndexByte(line, '#'); idx != -1 {
+				line = strings.TrimSpace(line[:idx])
+			}
 			ipStr = line
+
+		case "plain_comments":
+			// One IP/CIDR per line, # comments already filtered above.
+			// Strip inline comments and trailing whitespace.
+			if idx := strings.IndexByte(line, '#'); idx != -1 {
+				line = strings.TrimSpace(line[:idx])
+				if line == "" {
+					continue
+				}
+			}
+			ipStr = line
+
+		case "hostfile":
+			// URLhaus hostfile format: "127.0.0.1\tmalware.example.com"
+			// The first field is always 127.0.0.1 (loopback redirect).
+			// The second field is the malware domain — not an IP we can
+			// store in the reputation DB directly.
+			// For IP blocking we use the ipblocklist endpoint instead;
+			// this case is kept only to avoid silent data loss and emits
+			// nothing (the caller should use plain_comments format with
+			// the correct URL — see urlhaus feed in feeds.yaml).
+			continue
+
+		case "url":
+			parsed, err := url.Parse(line)
+			if err != nil {
+				continue
+			}
+			host := parsed.Hostname()
+			if host == "" {
+				continue
+			}
+			ipStr = host
+
+		default:
+			// plain: one IP or CIDR per line, no comments expected but
+			// we already stripped # lines above.
+			ipStr = line
+		}
+
+		ipStr = strings.TrimSpace(ipStr)
+		if ipStr == "" {
+			continue
 		}
 
 		// Try to parse as IP or prefix
@@ -335,8 +439,12 @@ func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedCo
 			continue
 		}
 
+		sourceID := feedConfig.Name
+		if sourceName != "" {
+			sourceID += "/" + sourceName
+		}
 		entry := models.FeedEntry{
-			Source:     feedConfig.Name,
+			Source:     sourceID,
 			ThreatType: feedConfig.ThreatType,
 			Confidence: feedConfig.Confidence,
 			Weight:     feedConfig.Weight,
@@ -358,106 +466,36 @@ func (i *Ingestor) parseContent(content, format string, feedConfig config.FeedCo
 }
 
 // storeEntries stores parsed entries to the database
-func (i *Ingestor) storeEntries(entries []models.FeedEntry) error {
-	if len(entries) == 0 {
-		return nil
-	}
-
-	// Convert FeedEntry to database entries
-	dbEntries := make([]database.IPReputationEntry, 0, len(entries))
-	now := time.Now()
-
-	for _, entry := range entries {
-		var ipStart, ipEnd string
-		var cidr *string
-
-		if entry.Prefix.IsValid() {
-			// It's a CIDR prefix
-			ipStart, ipEnd = database.IPRangeFromPrefix(entry.Prefix)
-			cidrStr := entry.Prefix.String()
-			cidr = &cidrStr
-		} else if entry.IP.IsValid() {
-			// It's a single IP
-			ipStart, ipEnd = database.IPRangeFromAddr(entry.IP)
-		} else {
-			continue
-		}
-
-		dbEntry := database.IPReputationEntry{
-			IPStart:    ipStart,
-			IPEnd:      ipEnd,
-			CIDR:       cidr,
-			Source:     entry.Source,
-			ThreatType: entry.ThreatType,
-			Confidence: entry.Confidence,
-			Weight:     entry.Weight,
-			FirstSeen:  now,
-			LastSeen:   now,
-		}
-
-		dbEntries = append(dbEntries, dbEntry)
-	}
-
-	if len(dbEntries) == 0 {
-		return nil
-	}
-
-	// Store in batches to avoid memory issues
-	batchSize := 5000
-	totalInserted := 0
-
-	for start := 0; start < len(dbEntries); start += batchSize {
-		end := start + batchSize
-		if end > len(dbEntries) {
-			end = len(dbEntries)
-		}
-
-		batch := dbEntries[start:end]
-
-		if i.db != nil {
-			inserted, err := i.db.InsertReputationBatch(context.Background(), batch)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to insert batch: %v", err))
-				continue
-			}
-			totalInserted += inserted
-		} else {
-			// No DB connection, just log
-			totalInserted += len(batch)
-		}
-	}
-
-	logger.Info(fmt.Sprintf("Stored %d entries to database", totalInserted))
-	return nil
+func (i *Ingestor) storeEntries(ctx context.Context, entries []models.FeedEntry) error {
+	_, err := i.storeEntriesWithCount(ctx, entries)
+	return err
 }
 
-// storeEntriesWithCount stores parsed entries and returns count stored
-func (i *Ingestor) storeEntriesWithCount(entries []models.FeedEntry) (int, error) {
+// storeEntriesWithCount converts FeedEntry slice to DB rows and persists them
+// in batches of 5 000. Returns the number of rows actually inserted.
+func (i *Ingestor) storeEntriesWithCount(ctx context.Context, entries []models.FeedEntry) (int, error) {
 	if len(entries) == 0 {
 		return 0, nil
 	}
 
-	// Convert FeedEntry to database entries
-	dbEntries := make([]database.IPReputationEntry, 0, len(entries))
 	now := time.Now()
+	dbEntries := make([]database.IPReputationEntry, 0, len(entries))
 
 	for _, entry := range entries {
 		var ipStart, ipEnd string
 		var cidr *string
 
 		if entry.Prefix.IsValid() {
-			// It's a CIDR prefix
 			ipStart, ipEnd = database.IPRangeFromPrefix(entry.Prefix)
 			cidrStr := entry.Prefix.String()
 			cidr = &cidrStr
 		} else if entry.IP.IsValid() {
-			// It's a single IP
 			ipStart, ipEnd = database.IPRangeFromAddr(entry.IP)
 		} else {
 			continue
 		}
 
-		dbEntry := database.IPReputationEntry{
+		dbEntries = append(dbEntries, database.IPReputationEntry{
 			IPStart:    ipStart,
 			IPEnd:      ipEnd,
 			CIDR:       cidr,
@@ -467,17 +505,14 @@ func (i *Ingestor) storeEntriesWithCount(entries []models.FeedEntry) (int, error
 			Weight:     entry.Weight,
 			FirstSeen:  now,
 			LastSeen:   now,
-		}
-
-		dbEntries = append(dbEntries, dbEntry)
+		})
 	}
 
 	if len(dbEntries) == 0 {
 		return 0, nil
 	}
 
-	// Store in batches
-	batchSize := 5000
+	const batchSize = 5000
 	totalInserted := 0
 
 	for start := 0; start < len(dbEntries); start += batchSize {
@@ -489,7 +524,7 @@ func (i *Ingestor) storeEntriesWithCount(entries []models.FeedEntry) (int, error
 		batch := dbEntries[start:end]
 
 		if i.db != nil {
-			inserted, err := i.db.InsertReputationBatch(context.Background(), batch)
+			inserted, err := i.db.InsertReputationBatch(ctx, batch)
 			if err != nil {
 				return totalInserted, fmt.Errorf("batch insert failed: %w", err)
 			}
@@ -500,6 +535,126 @@ func (i *Ingestor) storeEntriesWithCount(entries []models.FeedEntry) (int, error
 	}
 
 	return totalInserted, nil
+}
+
+// processWhitelists fetches static and remote allowlists and stores each source
+// atomically. It deliberately keeps private ranges: those are also rejected at
+// the API boundary, while the MMDB override protects internal/offline users.
+func (i *Ingestor) processWhitelists(ctx context.Context) (int, error) {
+	if !i.feedsConfig.Whitelist.Enabled {
+		return 0, nil
+	}
+
+	total := 0
+	var syncErrors []error
+	for _, source := range i.feedsConfig.Whitelist.Sources {
+		values := append([]string(nil), source.Ranges...)
+		if source.URL != "" {
+			body, err := i.fetchText(ctx, source.URL)
+			if err != nil {
+				syncErrors = append(syncErrors, fmt.Errorf("whitelist %s: %w", source.Name, err))
+				continue
+			}
+			values = append(values, strings.Split(body, "\n")...)
+		}
+
+		entries, err := parseWhitelistEntries(source.Name, values)
+		if err != nil {
+			syncErrors = append(syncErrors, err)
+			continue
+		}
+		if i.db != nil {
+			stored, err := i.db.ReplaceWhitelistSource(ctx, source.Name, entries)
+			if err != nil {
+				syncErrors = append(syncErrors, err)
+				continue
+			}
+			total += stored
+		} else {
+			total += len(entries)
+		}
+	}
+	return total, errors.Join(syncErrors...)
+}
+
+func (i *Ingestor) fetchText(ctx context.Context, sourceURL string) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt <= i.config.Ingestor.MaxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("User-Agent", i.config.Ingestor.UserAgent)
+		resp, err := i.httpClient.Do(req)
+		if err == nil {
+			const maxWhitelistBytes = 10 * 1024 * 1024
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxWhitelistBytes+1))
+			resp.Body.Close()
+			switch {
+			case resp.StatusCode != http.StatusOK:
+				lastErr = fmt.Errorf("unexpected status code %d", resp.StatusCode)
+			case readErr != nil:
+				lastErr = fmt.Errorf("read response: %w", readErr)
+			case len(body) > maxWhitelistBytes:
+				lastErr = fmt.Errorf("response exceeds %d bytes", maxWhitelistBytes)
+			default:
+				return string(body), nil
+			}
+		} else {
+			lastErr = err
+		}
+
+		if attempt < i.config.Ingestor.MaxRetries {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(i.config.Ingestor.RetryDelay):
+			}
+		}
+	}
+	return "", fmt.Errorf("fetch failed after retries: %w", lastErr)
+}
+
+func parseWhitelistEntries(source string, values []string) ([]database.WhitelistEntry, error) {
+	deduplicated := make(map[string]database.WhitelistEntry)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || strings.HasPrefix(value, "#") || strings.HasPrefix(value, ";") {
+			continue
+		}
+		if index := strings.IndexAny(value, " \t#;"); index >= 0 {
+			value = strings.TrimSpace(value[:index])
+		}
+		addr, prefix, isPrefix, err := iputil.ParseIPOrPrefix(value)
+		if err != nil {
+			continue
+		}
+		if !isPrefix {
+			bits := 128
+			if addr.Is4() {
+				bits = 32
+			}
+			prefix = netip.PrefixFrom(addr, bits)
+		}
+		prefix = prefix.Masked()
+		start, end := database.IPRangeFromPrefix(prefix)
+		cidr := prefix.String()
+		deduplicated[cidr] = database.WhitelistEntry{
+			IPStart: start, IPEnd: end, CIDR: &cidr, Name: source,
+			Source: source, Permanent: true,
+		}
+	}
+	if len(deduplicated) == 0 {
+		return nil, fmt.Errorf("whitelist %s returned no valid IP ranges", source)
+	}
+	entries := make([]database.WhitelistEntry, 0, len(deduplicated))
+	for _, entry := range deduplicated {
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(left, right int) bool {
+		return *entries[left].CIDR < *entries[right].CIDR
+	})
+	return entries, nil
 }
 
 // FetchFeed manually fetches a single feed

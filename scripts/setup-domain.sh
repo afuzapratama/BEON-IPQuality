@@ -205,7 +205,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header Connection "";
         
@@ -234,10 +234,12 @@ server {
     }
 
     # Internal endpoints - restricted
+    location ^~ /api/v1/cache {
+        return 404;
+    }
+
     location /api/v1/reload {
         allow 127.0.0.1;
-        allow 10.0.0.0/8;
-        allow 192.168.0.0/16;
         deny all;
         proxy_pass http://ipquality_api;
         proxy_http_version 1.1;
@@ -248,8 +250,6 @@ server {
     # Metrics endpoint - restricted
     location /metrics {
         allow 127.0.0.1;
-        allow 10.0.0.0/8;
-        allow 192.168.0.0/16;
         # Tambahkan IP monitoring server kamu di sini
         # allow YOUR_PROMETHEUS_IP;
         deny all;
@@ -262,8 +262,8 @@ server {
 # GRAFANA DASHBOARD - ${DOMAIN}:3000
 #===============================================================================
 server {
-    listen ${GRAFANA_EXTERNAL_PORT};
-    listen [::]:${GRAFANA_EXTERNAL_PORT};
+    listen 127.0.0.1:${GRAFANA_EXTERNAL_PORT};
+    listen [::1]:${GRAFANA_EXTERNAL_PORT};
     server_name ${DOMAIN};
 
     access_log /var/log/nginx/beon-grafana-access.log;
@@ -274,7 +274,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -295,8 +295,8 @@ server {
 # JUDGE NODE - ${DOMAIN}:8081
 #===============================================================================
 server {
-    listen ${JUDGE_EXTERNAL_PORT};
-    listen [::]:${JUDGE_EXTERNAL_PORT};
+    listen 127.0.0.1:${JUDGE_EXTERNAL_PORT};
+    listen [::1]:${JUDGE_EXTERNAL_PORT};
     server_name ${DOMAIN};
 
     access_log /var/log/nginx/beon-judge-access.log;
@@ -312,7 +312,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header Connection "";
         
@@ -326,8 +326,8 @@ server {
 # PROMETHEUS - ${DOMAIN}:9090
 #===============================================================================
 server {
-    listen ${PROMETHEUS_EXTERNAL_PORT};
-    listen [::]:${PROMETHEUS_EXTERNAL_PORT};
+    listen 127.0.0.1:${PROMETHEUS_EXTERNAL_PORT};
+    listen [::1]:${PROMETHEUS_EXTERNAL_PORT};
     server_name ${DOMAIN};
 
     access_log /var/log/nginx/beon-prometheus-access.log;
@@ -347,7 +347,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
     }
 }
 
@@ -355,8 +355,8 @@ server {
 # METRICS EXPORTER - ${DOMAIN}:9100
 #===============================================================================
 server {
-    listen ${METRICS_EXTERNAL_PORT};
-    listen [::]:${METRICS_EXTERNAL_PORT};
+    listen 127.0.0.1:${METRICS_EXTERNAL_PORT};
+    listen [::1]:${METRICS_EXTERNAL_PORT};
     server_name ${DOMAIN};
 
     # RECOMMENDED: Restrict access
@@ -399,10 +399,6 @@ if command -v ufw &> /dev/null; then
     ufw allow 22/tcp comment 'SSH'
     ufw allow 80/tcp comment 'HTTP - API'
     ufw allow 443/tcp comment 'HTTPS - API'
-    ufw allow ${GRAFANA_EXTERNAL_PORT}/tcp comment 'Grafana Dashboard'
-    ufw allow ${JUDGE_EXTERNAL_PORT}/tcp comment 'Judge Node'
-    ufw allow ${PROMETHEUS_EXTERNAL_PORT}/tcp comment 'Prometheus'
-    ufw allow ${METRICS_EXTERNAL_PORT}/tcp comment 'Metrics Exporter'
     
     # Enable firewall if not already
     if ufw status | grep -q "inactive"; then
@@ -528,7 +524,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header Connection "";
         
@@ -552,10 +548,12 @@ server {
     }
 
     # Internal endpoints
+    location ^~ /api/v1/cache {
+        return 404;
+    }
+
     location /api/v1/reload {
         allow 127.0.0.1;
-        allow 10.0.0.0/8;
-        allow 192.168.0.0/16;
         deny all;
         proxy_pass http://ipquality_api;
         proxy_http_version 1.1;
@@ -563,8 +561,6 @@ server {
 
     location /metrics {
         allow 127.0.0.1;
-        allow 10.0.0.0/8;
-        allow 192.168.0.0/16;
         deny all;
         proxy_pass http://ipquality_api/metrics;
         proxy_http_version 1.1;

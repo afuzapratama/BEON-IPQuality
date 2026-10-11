@@ -254,7 +254,9 @@ func (s *Scanner) isPortOpen(ctx context.Context, ip string, port int) bool {
 	return true
 }
 
-// isSOCKS5 checks if port is running SOCKS5
+// isSOCKS5 checks if port is running SOCKS5 (with or without authentication).
+// It advertises both no-auth (0x00) and username/password (0x02) methods so
+// that auth-required proxies are also detected.
 func (s *Scanner) isSOCKS5(ctx context.Context, ip string, port int) bool {
 	addr := fmt.Sprintf("%s:%d", ip, port)
 
@@ -265,28 +267,37 @@ func (s *Scanner) isSOCKS5(ctx context.Context, ip string, port int) bool {
 	}
 	defer conn.Close()
 
-	// Set deadline
-	conn.SetDeadline(time.Now().Add(s.timeout))
+	// Set deadline from context or fallback to scanner timeout.
+	deadline := time.Now().Add(s.timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	conn.SetDeadline(deadline) //nolint:errcheck
 
-	// SOCKS5 handshake: send version + auth methods
-	// Version 5, 1 method, no auth (0x00)
-	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
+	// SOCKS5 greeting: version=5, 2 methods: no-auth (0x00) and
+	// username/password (0x02).
+	_, err = conn.Write([]byte{0x05, 0x02, 0x00, 0x02})
 	if err != nil {
 		return false
 	}
 
-	// Read response
+	// Read server response: version + chosen method.
 	buf := make([]byte, 2)
-	n, err := conn.Read(buf)
+	n, err := io.ReadFull(conn, buf)
 	if err != nil || n < 2 {
 		return false
 	}
 
-	// Check if response is SOCKS5 (version 5, method accepted)
-	return buf[0] == 0x05 && buf[1] == 0x00
+	// SOCKS5 server responds with version=5 and one of:
+	//   0x00 = no auth required
+	//   0x02 = username/password required
+	//   0xFF = no acceptable methods (not a SOCKS5 proxy for us)
+	return buf[0] == 0x05 && (buf[1] == 0x00 || buf[1] == 0x02)
 }
 
-// isSOCKS4 checks if port is running SOCKS4
+// isSOCKS4 checks if port is running SOCKS4.
+// Uses a SOCKS4 BIND request to 0.0.0.0:0 so that we are only testing
+// the protocol handshake without routing actual traffic through the proxy.
 func (s *Scanner) isSOCKS4(ctx context.Context, ip string, port int) bool {
 	addr := fmt.Sprintf("%s:%d", ip, port)
 
@@ -297,15 +308,20 @@ func (s *Scanner) isSOCKS4(ctx context.Context, ip string, port int) bool {
 	}
 	defer conn.Close()
 
-	conn.SetDeadline(time.Now().Add(s.timeout))
+	deadline := time.Now().Add(s.timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	conn.SetDeadline(deadline) //nolint:errcheck
 
-	// SOCKS4 connect request to google.com:80
-	// VN=4, CD=1 (connect), DSTPORT=80, DSTIP=142.250.185.206 (google), USERID=null
+	// SOCKS4 CONNECT request to 0.0.0.1:1 (unroutable destination).
+	// We only care about the protocol response, not actual connectivity.
+	// VN=4, CD=1 (CONNECT), DSTPORT=1, DSTIP=0.0.0.1, USERID=\x00
 	request := []byte{
 		0x04, 0x01, // Version 4, Connect command
-		0x00, 0x50, // Port 80
-		0x8e, 0xfa, 0xb9, 0xce, // 142.250.185.206
-		0x00, // Null terminated userid
+		0x00, 0x01, // Port 1
+		0x00, 0x00, 0x00, 0x01, // IP 0.0.0.1 (non-routable)
+		0x00, // Null-terminated user ID
 	}
 
 	_, err = conn.Write(request)

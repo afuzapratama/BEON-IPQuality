@@ -392,25 +392,22 @@ GOENV
     systemctl enable postgresql 2>/dev/null
     print_success "PostgreSQL service started"
     
-    print_progress "Creating database and user..."
-    sudo -u postgres psql << EOSQL
--- Drop existing if any (for clean reinstall)
-DROP DATABASE IF EXISTS ipquality;
-DROP USER IF EXISTS beon;
-
--- Create user and database
-CREATE USER beon WITH PASSWORD '${DB_PASSWORD}';
-CREATE DATABASE ipquality OWNER beon;
-GRANT ALL PRIVILEGES ON DATABASE ipquality TO beon;
-\c ipquality
+    print_progress "Creating or updating database and user (existing data is preserved)..."
+    if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='beon'" | grep -q 1; then
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER USER beon WITH PASSWORD '${DB_PASSWORD}';" || exit 1
+    else
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER beon WITH PASSWORD '${DB_PASSWORD}';" || exit 1
+    fi
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='ipquality'" | grep -q 1; then
+        sudo -u postgres createdb -O beon ipquality || exit 1
+    fi
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -d ipquality << 'EOSQL' || exit 1
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
--- Grant schema permissions
 GRANT ALL ON SCHEMA public TO beon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO beon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO beon;
 EOSQL
-    print_success "Database 'ipquality' created with user 'beon'"
+    print_success "Database 'ipquality' is ready; existing records were not deleted"
 
     #===========================================================================
     # STEP 4: Install Redis
@@ -525,29 +522,25 @@ NGINXCONF
     print_info "Downloaded $FILE_COUNT files"
 
     #===========================================================================
-    # STEP 8: Download Pre-built Binaries
+    # STEP 8: Build binaries from the audited source checkout
     #===========================================================================
-    print_step 8 "DOWNLOADING PRE-BUILT BINARIES"
+    print_step 8 "BUILDING CURRENT SOURCE"
     
     cd /tmp/BEON-IPQuality
     
-    RELEASE_URL="https://github.com/afuzapratama/BEON-IPQuality/releases/download/v1.0.0/beon-binaries-linux-amd64.tar.gz"
-    
-    print_progress "Downloading binaries from GitHub Release..."
-    if curl -fsSL "$RELEASE_URL" -o /tmp/beon-binaries.tar.gz; then
-        print_success "Downloaded binaries"
-    else
-        print_error "Failed to download binaries"
+    print_progress "Compiling API, ingestor, compiler, and judge..."
+    BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    if ! CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_BRANCH} -X main.buildTime=${BUILD_TIME}" -o "$INSTALL_DIR/bin/api" ./cmd/api; then
+        print_error "Failed to build API"
         exit 1
     fi
-    
-    print_progress "Extracting binaries..."
-    if tar -xzf /tmp/beon-binaries.tar.gz -C $INSTALL_DIR/bin/; then
-        print_success "Extracted binaries"
-    else
-        print_error "Failed to extract binaries"
+    if ! CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=${GITHUB_BRANCH} -X main.BuildTime=${BUILD_TIME}" -o "$INSTALL_DIR/bin/ingestor" ./cmd/ingestor; then
+        print_error "Failed to build ingestor"
         exit 1
     fi
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$INSTALL_DIR/bin/compiler" ./cmd/compiler || exit 1
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$INSTALL_DIR/bin/judge" ./cmd/judge || exit 1
+    print_success "Built binaries from branch ${GITHUB_BRANCH}"
     
     chmod +x $INSTALL_DIR/bin/*
     
@@ -566,9 +559,6 @@ NGINXCONF
         print_info "  $bin: $SIZE"
     done
     
-    # Cleanup
-    rm -f /tmp/beon-binaries.tar.gz
-
     #===========================================================================
     # STEP 9: Database Migration
     #===========================================================================
@@ -576,7 +566,10 @@ NGINXCONF
     
     if [[ -f "$INSTALL_DIR/migrations/001_initial_schema.sql" ]]; then
         print_progress "Applying database schema..."
-        sudo -u postgres psql -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5 || true
+        if ! sudo -u postgres psql -v ON_ERROR_STOP=1 -d ipquality -f "$INSTALL_DIR/migrations/001_initial_schema.sql" 2>&1 | tail -5; then
+            print_error "Database migration failed"
+            exit 1
+        fi
         print_success "Schema applied"
         
         # IMPORTANT: Grant all permissions to beon user after creating tables
@@ -1075,4 +1068,3 @@ done
 
 # Run main
 main "$@"
-

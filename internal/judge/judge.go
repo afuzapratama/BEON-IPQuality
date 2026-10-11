@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/lfrfrfr/beon-ipquality/internal/api/middleware"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	"github.com/lfrfrfr/beon-ipquality/internal/scoring"
+	"github.com/lfrfrfr/beon-ipquality/pkg/iputil"
 	"github.com/lfrfrfr/beon-ipquality/pkg/logger"
 	"github.com/lfrfrfr/beon-ipquality/pkg/models"
 )
@@ -28,8 +32,8 @@ type Node struct {
 	scanner     *Scanner
 	mu          sync.RWMutex
 	startTime   time.Time
-	lookupCount uint64
-	scanCount   uint64
+	lookupCount atomic.Uint64
+	scanCount   atomic.Uint64
 }
 
 // New creates a new Judge Node
@@ -85,20 +89,34 @@ func New(cfg *config.Config) (*Node, error) {
 
 // setupRoutes configures the API routes for the judge node
 func (n *Node) setupRoutes() {
+	// Public operational endpoints contain no sensitive or mutating operations.
+	n.app.Get("/health", n.handleHealth)
+	n.app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+
+	n.app.Get("/stats", middleware.AdminKeyAuth(n.config.API.AdminKey), n.handleStats)
+	n.app.Post("/reload", middleware.AdminKeyAuth(n.config.API.AdminKey), n.handleReload)
+
+	protected := n.app.Group("")
+	if n.config.Judge.RateLimit > 0 {
+		protected.Use(limiter.New(limiter.Config{
+			Max:        n.config.Judge.RateLimit,
+			Expiration: time.Second,
+			KeyGenerator: func(c *fiber.Ctx) string {
+				return c.IP()
+			},
+		}))
+	}
+	if n.config.API.AuthEnabled {
+		protected.Use(middleware.APIKeyAuth(n.config.API.APIKey))
+	}
+
 	// Single IP lookup - optimized for minimum latency
-	n.app.Get("/check/:ip", n.handleCheck)
+	protected.Get("/check/:ip", n.handleCheck)
 
 	// Active scanning endpoints
-	n.app.Get("/scan/:ip", n.handleScan)
-	n.app.Get("/scan/:ip/quick", n.handleQuickScan)
+	protected.Get("/scan/:ip", n.handleScan)
+	protected.Get("/scan/:ip/quick", n.handleQuickScan)
 
-	// Internal endpoints
-	n.app.Get("/health", n.handleHealth)
-	n.app.Get("/stats", n.handleStats)
-	n.app.Post("/reload", n.handleReload)
-
-	// Prometheus metrics endpoint
-	n.app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 }
 
 // Start starts the judge node server
@@ -133,6 +151,13 @@ func (n *Node) handleCheck(c *fiber.Ctx) error {
 			"ip":    ipStr,
 		})
 	}
+	addr = iputil.NormalizeIP(addr)
+	if !iputil.IsValid(addr) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "IP address is not publicly routable",
+			"ip":    ipStr,
+		})
+	}
 
 	// Perform lookup
 	n.mu.RLock()
@@ -160,8 +185,7 @@ func (n *Node) handleCheck(c *fiber.Ctx) error {
 	// Add query time
 	result.QueryTime = float64(time.Since(start).Microseconds()) / 1000.0 // Convert to ms
 
-	// Increment counter (atomic would be better but this is simple)
-	n.lookupCount++
+	n.lookupCount.Add(1)
 
 	return c.JSON(result)
 }
@@ -184,8 +208,8 @@ func (n *Node) handleStats(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"uptime":       time.Since(n.startTime).String(),
-		"lookup_count": n.lookupCount,
-		"scan_count":   n.scanCount,
+		"lookup_count": n.lookupCount.Load(),
+		"scan_count":   n.scanCount.Load(),
 		"mmdb":         mmdbStats,
 	})
 }
@@ -221,19 +245,19 @@ func (n *Node) handleScan(c *fiber.Ctx) error {
 	ipStr := c.Params("ip")
 
 	// Validate IP
-	if !parseIP(ipStr).IsValid() {
+	if !isPublicTarget(ipStr) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid IP address",
+			"error": "IP address is not a valid public scan target",
 			"ip":    ipStr,
 		})
 	}
 
 	// Perform scan
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.UserContext(), 30*time.Second)
 	defer cancel()
 
 	result := n.scanner.Scan(ctx, ipStr)
-	n.scanCount++
+	n.scanCount.Add(1)
 
 	return c.JSON(result)
 }
@@ -243,19 +267,19 @@ func (n *Node) handleQuickScan(c *fiber.Ctx) error {
 	ipStr := c.Params("ip")
 
 	// Validate IP
-	if !parseIP(ipStr).IsValid() {
+	if !isPublicTarget(ipStr) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid IP address",
+			"error": "IP address is not a valid public scan target",
 			"ip":    ipStr,
 		})
 	}
 
 	// Perform quick scan
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.UserContext(), 10*time.Second)
 	defer cancel()
 
 	result := n.scanner.QuickScan(ctx, ipStr)
-	n.scanCount++
+	n.scanCount.Add(1)
 
 	return c.JSON(result)
 }
@@ -267,6 +291,11 @@ func parseIP(ip string) netip.Addr {
 		return netip.Addr{}
 	}
 	return addr
+}
+
+func isPublicTarget(ip string) bool {
+	addr := iputil.NormalizeIP(parseIP(ip))
+	return iputil.IsValid(addr)
 }
 
 // reloadLoop periodically reloads MMDB databases

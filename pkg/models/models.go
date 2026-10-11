@@ -90,6 +90,8 @@ type IPCheckResult struct {
 	IsAttacker   bool     `json:"attacker"`
 	Threats      []Threat `json:"threats,omitempty"`
 	ThreatTypes  []string `json:"threat_types,omitempty"` // List of threat type strings
+	Sources      []string `json:"sources,omitempty"`
+	Whitelisted  bool     `json:"whitelisted,omitempty"`
 	Geo          *GeoInfo `json:"geo,omitempty"`
 	ASN          *ASNInfo `json:"asn,omitempty"`
 	QueryTime    float64  `json:"query_time_ms"`
@@ -108,7 +110,7 @@ func GetRiskLevel(score int) string {
 	case score >= 25:
 		return "low"
 	default:
-		return "safe"
+		return "clean"
 	}
 }
 

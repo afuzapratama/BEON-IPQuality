@@ -74,6 +74,17 @@ func TestCalculateScore(t *testing.T) {
 	}
 }
 
+func TestCalculateScoreUsesFeedWeight(t *testing.T) {
+	scorer := NewDefault()
+	now := time.Now()
+	score := scorer.CalculateScore([]models.Threat{{
+		ThreatType: "proxy", Weight: 90, Confidence: 1, LastSeen: now,
+	}}, nil, now)
+	if score != 95 {
+		t.Fatalf("score = %d, want 95 (weight 90 plus high-confidence bonus)", score)
+	}
+}
+
 func TestClassifyRisk(t *testing.T) {
 	scorer := NewDefault()
 

@@ -1,6 +1,6 @@
 # BEON-IPQuality Makefile
 
-.PHONY: all build clean test run-api run-ingestor run-compiler run-judge
+.PHONY: all build clean test test-race security run-api run-ingestor run-compiler run-judge migrate
 
 # Go parameters
 GOCMD=go
@@ -75,9 +75,9 @@ test-coverage:
 	$(GOTEST) -v -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
-test-integration:
-	@echo "Running integration tests..."
-	$(GOTEST) -v -tags=integration ./tests/...
+test-race:
+	@echo "Running tests with the race detector..."
+	$(GOTEST) -race ./...
 
 ## Dependency management
 deps:
@@ -102,30 +102,31 @@ vet:
 	@echo "Running go vet..."
 	$(GOCMD) vet ./...
 
+security:
+	@echo "Scanning reachable dependencies for vulnerabilities..."
+	govulncheck ./...
+
 ## Database
 migrate:
 	@echo "Running database migrations..."
-	@$(GOCMD) run ./scripts/migrate.go up
-
-migrate-down:
-	@echo "Rolling back migrations..."
-	@$(GOCMD) run ./scripts/migrate.go down
+	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)
+	@psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f ./migrations/001_initial_schema.sql
 
 ## Docker
 docker-build:
 	@echo "Building Docker images..."
-	docker-compose build
+	docker compose build
 
 docker-up:
 	@echo "Starting Docker containers..."
-	docker-compose up -d
+	docker compose up -d
 
 docker-down:
 	@echo "Stopping Docker containers..."
-	docker-compose down
+	docker compose down
 
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 ## Cleanup
 clean:
@@ -153,16 +154,16 @@ help:
 	@echo "Test:"
 	@echo "  make test            - Run unit tests"
 	@echo "  make test-coverage   - Run tests with coverage"
-	@echo "  make test-integration - Run integration tests"
+	@echo "  make test-race       - Run tests with race detector"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make fmt             - Format code"
 	@echo "  make lint            - Run linter"
 	@echo "  make vet             - Run go vet"
+	@echo "  make security        - Run govulncheck"
 	@echo ""
 	@echo "Database:"
 	@echo "  make migrate         - Run migrations"
-	@echo "  make migrate-down    - Rollback migrations"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build    - Build Docker images"
