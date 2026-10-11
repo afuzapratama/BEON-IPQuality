@@ -31,7 +31,7 @@ Glances dipasang pada host dan dibatasi loopback/SSH tunnel; CPU/RAM/network/dis
 
 ## Paket release dan image
 
-Unduh release prerelease yang tercatat di tracker, checksum binary archive, `SHA256SUMS`, `deployment-lock.env`, dan `images.json`. Verifikasi checksum sebelum extract. Pilih archive `linux_arm64`; archive berisi binary dan support files dari Git yang tracked, tanpa MMDB/secret runtime. Image service tersedia pada GHCR untuk linux/amd64 dan linux/arm64, dipilih otomatis oleh Docker. Pilih digest, bukan tag mutable.
+Unduh [v1.1.0-rc.1](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.1), release prerelease yang tercatat di tracker, checksum binary archive, `SHA256SUMS`, `deployment-lock.env`, dan `images.json`. Verifikasi checksum sebelum extract. Pilih archive `linux_arm64`; archive berisi binary dan support files dari Git yang tracked, tanpa MMDB/secret runtime. Image service tersedia pada GHCR untuk linux/amd64 dan linux/arm64, dipilih otomatis oleh Docker. Pilih digest, bukan tag mutable.
 
 GHCR package baru dapat bersifat private meskipun repo public. Jika pull memerlukan autentikasi, gunakan token `read:packages` dari file pribadi dengan `docker login ghcr.io --password-stdin`; agent akan menentukan kebutuhan setelah inspeksi akses. Jangan menyalin token ke `.env` proyek atau shell history. Paket release/checksum public tetap dapat dibaca tanpa registry login.
 

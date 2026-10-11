@@ -61,13 +61,13 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 - [x] Buat integration/smoke test deterministik dengan fixture feed: PostgreSQL → ingestor → compiler → API, whitelist/overlap/IPv6, reload, dan auth.
 - [x] Uji integrasi Redis dan kegagalan dependency. Analytics diuji di phase integrasinya.
 - [x] Verifikasi cross-build Linux ARM64 semua binary; hasil ELF AArch64 statically linked terkonfirmasi.
-- [ ] Jalankan workflow release binary matrix `amd64`/`arm64` dan verifikasi archive/checksum; eksekusi pada ARM asli menunggu VPS.
-- [ ] Siapkan image API/ingestor/compiler/Judge berlabel versi dan digest, publish ARM64 (atau multiarch) lewat CI; validasi base image/dependency tersedia untuk ARM64.
+- [x] Jalankan workflow release binary matrix `amd64`/`arm64` dan verifikasi archive/checksum; eksekusi pada ARM asli menunggu VPS.
+- [x] Siapkan image API/ingestor/compiler/Judge berlabel versi dan digest, publish ARM64 (atau multiarch) lewat CI; validasi base image/dependency tersedia untuk ARM64.
 - [x] Siapkan Compose produksi memakai image release, volume persisten, rotasi log, restart policy, parameter resource dan secret dari environment host.
 - [x] Siapkan Nginx HTTPS, loopback binding, bootstrap/upgrade dan migrasi schema terkontrol; startup SQL pada volume baru bukan sistem migrasi upgrade.
 - [x] Tulis backup PostgreSQL/config/MMDB, retention, salinan di luar VPS, restore terisolasi dan rollback aplikasi+snapshot+schema.
 - [x] Siapkan OpenAPI/API docs dan selaraskan proposal: status phase, versi Go aktual, schema INET/CIDR, response, health, startup Railway, dan angka benchmark historis.
-- [ ] Pastikan CI remote lulus pada revision yang akan dideploy. Catat tag/digest dan checksum artefak.
+- [x] Pastikan CI remote lulus pada revision yang akan dideploy. Catat tag/digest dan checksum artefak.
 
 **Gate VPS:** setelah phase 1–3 siap, informasikan pengguna bahwa akses VPS diperlukan untuk phase 4. Jangan memasang atau mengubah server sebelum akses dan targetnya tersedia.
 
@@ -181,3 +181,14 @@ Bootstrap Compose, rerun migrasi, penolakan checksum berubah, pg_dump bundle, ve
 Release automation memverifikasi CI terlebih dahulu, membangun archive amd64/arm64 hanya dari support files yang tracked (tanpa credential/MMDB runtime), mempublish image multiarch empat service ke GHCR, memverifikasi manifest dan CLI ARM melalui emulasi, dan menghasilkan immutable deployment-lock serta checksum. Tag prerelease dipakai untuk pilot; main/stable release lama tidak diubah. Hasil publish/CI dan digest akan dicatat setelah workflow berjalan.
 
 Sisa gate phase 3 adalah menjalankan dan memverifikasi workflow release pada revision final. Setelah itu akses VPS diperlukan untuk phase 4: IP/port SSH, username, path SSH key, sudo/OS/resource, domain bila ada, serta path file MaxMind (AccountID/LicenseKey). Offsite backup destination dan akses read:packages bila GHCR memerlukan login juga ditentukan saat itu.
+
+
+### Phase 3 selesai — release candidate terverifikasi
+
+[Release v1.1.0-rc.1](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.1) terbit dari revision runtime `614f8c7e5f57a0dd5f263334a2bdc5d09cced9a1`. [Workflow release](https://github.com/afuzapratama/BEON-IPQuality/actions/runs/38184993152) lulus: tiga job verify, binary amd64/arm64, empat image multiarch dengan verifikasi platform dan CLI ARM melalui QEMU, serta publication assets. CI branch juga lulus pada run `38184554513`.
+
+Arsip yang dipublish diunduh ulang; SHA256SUMS, empat ELF binary di tiap arsitektur, dan executable bit updater diverifikasi. Image index API terbaca dari registry tanpa login dan memuat amd64/arm64. Docker service digest dan dependency PostgreSQL/Redis dipin dalam `deployments/releases/v1.1.0-rc.1.env` (salinan deployment-lock release). Executable bit script dicatat eksplisit di Git agar checkout Linux benar; workspace lokal tidak melacak perubahan mode secara otomatis.
+
+Paket phase 3 siap untuk pilot, bukan bukti produksi telah berjalan. Main/draft PR tetap dalam proses review; release candidate dipakai sebagai revision tetap. Native ARM VPS, feed nyata, file/kredensial MaxMind, DNS/HTTPS, offsite backup dan performa/drill data nyata diuji pada phase 4–6.
+
+**Gate phase 4 sekarang tercapai.** Informasi server diperlukan: IP, port SSH, username, path file SSH key yang dapat diakses agent, sudo/OS/vCPU/RAM/disk, domain bila tersedia, dan path file MaxMind (AccountID/LicenseKey). Agent akan menerapkan path kredensial serta direktori MMDB proyek pada server, memasang native updater/timer dan monitoring ringan setelah informasi itu tersedia. Secret tidak perlu dimasukkan ke repository.
