@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, 'fix/**']
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -40,7 +41,7 @@ jobs:
           POSTGRES_DB: beon_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres -d beon_test"
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d beon_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
@@ -59,3 +60,27 @@ jobs:
           BEON_INTEGRATION_DATABASE_URL: postgresql://postgres:integration-only@127.0.0.1:5432/beon_test?sslmode=disable
           BEON_INTEGRATION_REDIS_URL: redis://127.0.0.1:6379
         run: go test -race -count=1 ./tests/integration
+
+  operations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate OpenAPI contract
+        run: |
+          pip install openapi-spec-validator==0.9.0
+          python -m openapi_spec_validator docs/openapi.yaml
+      - name: Nginx HTTPS configuration syntax
+        run: ./tests/ops/test-nginx.sh
+      - name: GeoIP paths with fixture executable
+        run: ./tests/ops/test-geoip.sh
+      - name: Build fixture service images
+        run: |
+          for service in api compiler ingestor judge; do
+            docker buildx build --target "$service" --load -t "beon-phase3-$service:local" .
+          done
+      - name: Production bootstrap, migrations, backup and isolated restore
+        run: ./tests/ops/test-production.sh

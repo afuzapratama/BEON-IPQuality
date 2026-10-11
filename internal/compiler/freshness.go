@@ -9,22 +9,12 @@ import (
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
 	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/pkg/models"
-	"github.com/robfig/cron/v3"
 )
 
 // FreshnessBudget allows one scheduled interval plus processing/publication
 // delay. Different schedules must not all be represented as a one-hour SLA.
 func FreshnessBudget(schedule string, now time.Time, compile, reload, fetch time.Duration) (time.Duration, error) {
-	parsed, err := cron.ParseStandard(schedule)
-	if err != nil {
-		return 0, err
-	}
-	next := parsed.Next(now)
-	second := parsed.Next(next)
-	if next.IsZero() || second.IsZero() {
-		return 0, fmt.Errorf("schedule has no future run")
-	}
-	return second.Sub(next) + compile + reload + fetch, nil
+	return config.FreshnessBudget(schedule, now, compile, reload, fetch)
 }
 
 func (c *Compiler) fetchFeedFreshness(ctx context.Context, now time.Time) ([]models.FeedFreshness, error) {

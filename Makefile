@@ -113,7 +113,7 @@ security:
 migrate:
 	@echo "Running database migrations..."
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required"; exit 1)
-	@psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f ./migrations/001_initial_schema.sql
+	@DATABASE_URL="$(DATABASE_URL)" ./scripts/migrate.sh
 
 ## Docker
 docker-build:
@@ -176,3 +176,11 @@ help:
 	@echo "Other:"
 	@echo "  make deps            - Download dependencies"
 	@echo "  make clean           - Clean build artifacts"
+
+release-package:
+	./scripts/package-release.sh
+
+ops-test:
+	./tests/ops/test-geoip.sh
+	./tests/ops/test-production.sh
+	./tests/ops/test-nginx.sh

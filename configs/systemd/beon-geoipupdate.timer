@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily MaxMind update for BEON-IPQuality
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Asia/Jakarta
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

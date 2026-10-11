@@ -6,6 +6,7 @@ import (
 	"github.com/lfrfrfr/beon-ipquality/pkg/models"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/oschwald/maxminddb-golang"
@@ -88,4 +89,25 @@ func (r *Reader) snapshot(maxAge time.Duration, now time.Time) SnapshotStatus {
 		}
 	}
 	return status
+}
+
+// VerifyDirectory validates backup/rollback files without requiring PostgreSQL.
+func VerifyDirectory(directory string) (*Reader, error) {
+	paths := []string{filepath.Join(directory, "GeoLite2-City.mmdb"), filepath.Join(directory, "GeoLite2-ASN.mmdb")}
+	for index, path := range paths {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			paths[index] = ""
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	reader, err := NewReader(filepath.Join(directory, "reputation.mmdb"), paths[0], paths[1])
+	if err != nil {
+		return nil, err
+	}
+	if (paths[0] != "" && reader.geoipDB == nil) || (paths[1] != "" && reader.asnDB == nil) {
+		reader.Close()
+		return nil, fmt.Errorf("invalid optional MMDB in snapshot directory")
+	}
+	return reader, nil
 }

@@ -109,3 +109,4 @@ node_modules/
 
 # GeoIP updater runtime lock
 data/mmdb/.geoipupdate.lock
+backups/

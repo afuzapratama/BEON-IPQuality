@@ -2,7 +2,7 @@
 
 Railway dapat membangun target `api` dari `Dockerfile` menggunakan `railway.json`. Deployment memerlukan PostgreSQL, Redis, dan MMDB persisten di `/app/data/mmdb/reputation.mmdb`.
 
-API tidak menyertakan snapshot reputasi di image. Ini disengaja agar image tidak membawa data lama. Attach volume di `/app/data`, lalu hasilkan MMDB menggunakan service compiler atau pipeline data terpisah sebelum API dinyalakan. `/health` mengembalikan 503 sampai file tersebut dapat dibaca.
+API tidak menyertakan snapshot reputasi di image. Ini disengaja agar image tidak membawa data lama. Attach volume di `/app/data`, lalu hasilkan MMDB menggunakan service compiler atau pipeline data terpisah sebelum API dinyalakan. API production keluar saat startup bila MMDB belum tersedia/invalid; siapkan snapshot sebelum menyalakannya. Setelah proses berjalan, `/health` memberikan 503 bila snapshot/source stale atau reader unavailable.
 
 Gunakan variabel dari `railway.env.example`. Yang wajib untuk API production:
 

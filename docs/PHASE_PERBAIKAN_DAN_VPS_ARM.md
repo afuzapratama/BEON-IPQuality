@@ -56,17 +56,17 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 
 ## Phase 3 — Pengujian, dokumen, dan paket ARM64
 
-- [ ] Tetapkan expiry/retention reputasi historis dan riwayat fetch; uji IP yang hilang dari feed dan refresh parsial.
+- [x] Tetapkan expiry/retention reputasi historis dan riwayat fetch; uji IP yang hilang dari feed dan refresh parsial.
 
 - [x] Buat integration/smoke test deterministik dengan fixture feed: PostgreSQL → ingestor → compiler → API, whitelist/overlap/IPv6, reload, dan auth.
 - [x] Uji integrasi Redis dan kegagalan dependency. Analytics diuji di phase integrasinya.
 - [x] Verifikasi cross-build Linux ARM64 semua binary; hasil ELF AArch64 statically linked terkonfirmasi.
 - [ ] Jalankan workflow release binary matrix `amd64`/`arm64` dan verifikasi archive/checksum; eksekusi pada ARM asli menunggu VPS.
 - [ ] Siapkan image API/ingestor/compiler/Judge berlabel versi dan digest, publish ARM64 (atau multiarch) lewat CI; validasi base image/dependency tersedia untuk ARM64.
-- [ ] Siapkan Compose produksi memakai image release, volume persisten, rotasi log, restart policy, parameter resource dan secret dari environment host.
-- [ ] Siapkan Nginx HTTPS, loopback binding, bootstrap/upgrade dan migrasi schema terkontrol; startup SQL pada volume baru bukan sistem migrasi upgrade.
-- [ ] Tulis backup PostgreSQL/config/MMDB, retention, salinan di luar VPS, restore terisolasi dan rollback aplikasi+snapshot+schema.
-- [ ] Siapkan OpenAPI/API docs dan selaraskan proposal: status phase, versi Go aktual, schema INET/CIDR, response, health, startup Railway, dan angka benchmark historis.
+- [x] Siapkan Compose produksi memakai image release, volume persisten, rotasi log, restart policy, parameter resource dan secret dari environment host.
+- [x] Siapkan Nginx HTTPS, loopback binding, bootstrap/upgrade dan migrasi schema terkontrol; startup SQL pada volume baru bukan sistem migrasi upgrade.
+- [x] Tulis backup PostgreSQL/config/MMDB, retention, salinan di luar VPS, restore terisolasi dan rollback aplikasi+snapshot+schema.
+- [x] Siapkan OpenAPI/API docs dan selaraskan proposal: status phase, versi Go aktual, schema INET/CIDR, response, health, startup Railway, dan angka benchmark historis.
 - [ ] Pastikan CI remote lulus pada revision yang akan dideploy. Catat tag/digest dan checksum artefak.
 
 **Gate VPS:** setelah phase 1–3 siap, informasikan pengguna bahwa akses VPS diperlukan untuk phase 4. Jangan memasang atau mengubah server sebelum akses dan targetnya tersedia.
@@ -166,3 +166,18 @@ Phase 0 selesai: perubahan baseline dan phase 2 sudah di-commit/push ke `fix/pro
 Cross-build `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/beon-phase3-arm64/ ./cmd/...` menghasilkan api/ingestor/compiler/judge sebagai ELF AArch64 statically linked dengan Go 1.27.2. Manifest base image `golang:1.27.2-alpine` dan `alpine:3.22` mencantumkan linux/arm64. Ini verifikasi build dan manifest, bukan eksekusi aplikasi/container pada CPU ARM atau image release yang sudah dipublish.
 
 Pekerjaan berikutnya adalah sisa phase 3: kebijakan expiry/retention, kontrak API, image release, Compose produksi, migrasi upgrade, backup/restore/rollback dan runbook VPS. Akses VPS baru diperlukan pada phase 4 setelah paket deployment siap.
+
+
+## Phase 3 — persiapan release dan operasi
+
+Refresh source sekarang memakai COPY/staging/upsert/expiry dalam satu transaksi PostgreSQL. Snapshot yang mengecil langsung menonaktifkan IP hilang; empty/malformed/failed source ditolak dan transaksi gagal tidak mengubah dataset sebelumnya. TTL source dua freshness budget, expired history 30 hari, fetch history 30 hari dengan latest attempt/success tetap tersimpan. Retention cleanup harian dan scheduled refresh tidak saling overlap. Test PostgreSQL/Redis mencakup refresh mengecil, reappearance, kegagalan storage serta prune history/expired records.
+
+Compose produksi menarik image berversi/digest, memakai bind mount direktori proyek untuk MMDB, readonly filesystem API/ingestor, resource/pool caps yang dapat diubah, restart policy, log rotation dan service migrator berledger/checksum. Cap contoh belum menentukan ukuran VPS; nilai akhir menunggu spesifikasi dan peak RAM data nyata.
+
+Native geoipupdate memakai path file kredensial pilihan pengguna melalui `GEOIP_CONFIG_FILE`, output melalui `MMDB_HOST_DIR`, default `/opt/beon-ipquality/data/mmdb` yang dipasang sebagai `/app/data/mmdb`. Template systemd/env tersedia; mock executable membuktikan path dengan spasi, output routing, serta file kredensial tidak diubah. Package installation, file path nyata, MaxMind download dan timer server baru dijalankan pada phase 4/5.
+
+Bootstrap Compose, rerun migrasi, penolakan checksum berubah, pg_dump bundle, verifikasi MMDB offline dan restore database terisolasi lulus pada fixture container lokal. Readiness PostgreSQL diubah menjadi TCP supaya temporary init server tidak salah dianggap ready. Nginx HTTPS template lulus nginx -t dengan sertifikat fixture. OpenAPI 3.1 lulus validator 0.9.0. Proposal aktif diselaraskan dengan implementasi; proposal 2025 dipindah ke arsip dengan label historis.
+
+Release automation memverifikasi CI terlebih dahulu, membangun archive amd64/arm64 hanya dari support files yang tracked (tanpa credential/MMDB runtime), mempublish image multiarch empat service ke GHCR, memverifikasi manifest dan CLI ARM melalui emulasi, dan menghasilkan immutable deployment-lock serta checksum. Tag prerelease dipakai untuk pilot; main/stable release lama tidak diubah. Hasil publish/CI dan digest akan dicatat setelah workflow berjalan.
+
+Sisa gate phase 3 adalah menjalankan dan memverifikasi workflow release pada revision final. Setelah itu akses VPS diperlukan untuk phase 4: IP/port SSH, username, path SSH key, sudo/OS/resource, domain bila ada, serta path file MaxMind (AccountID/LicenseKey). Offsite backup destination dan akses read:packages bila GHCR memerlukan login juga ditentukan saat itu.

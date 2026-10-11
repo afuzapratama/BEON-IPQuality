@@ -1,0 +1,177 @@
+name: ${COMPOSE_PROJECT_NAME:-beon-ipquality}
+
+x-app-env: &app-env
+  APP_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  API_AUTH_ENABLED: "true"
+  API_KEY: ${API_KEY:?set API_KEY}
+  ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+  API_CORS_ENABLED: "false"
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: ${POSTGRES_USER:-beon}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  DB_NAME: ${POSTGRES_DB:-ipquality}
+  DB_SSL_MODE: disable
+  DB_MAX_CONNECTIONS: ${DB_MAX_CONNECTIONS:-10}
+  DB_MIN_CONNECTIONS: ${DB_MIN_CONNECTIONS:-1}
+  REDIS_ENABLED: ${REDIS_ENABLED:-true}
+  REDIS_HOST: redis
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+  REDIS_OPERATION_TIMEOUT: ${REDIS_OPERATION_TIMEOUT:-50ms}
+  MMDB_PATH: /app/data/mmdb/reputation.mmdb
+  MMDB_OUTPUT: /app/data/mmdb/reputation.mmdb
+  GEOIP_CITY_PATH: /app/data/mmdb/GeoLite2-City.mmdb
+  GEOIP_ASN_PATH: /app/data/mmdb/GeoLite2-ASN.mmdb
+  FEEDS_PATH: /app/configs/feeds.yaml
+  MMDB_COMPILE_INTERVAL: ${MMDB_COMPILE_INTERVAL:-15m}
+  MMDB_RELOAD_INTERVAL: ${MMDB_RELOAD_INTERVAL:-5m}
+  MMDB_MAX_AGE: ${MMDB_MAX_AGE:-1h}
+  INGESTOR_CONCURRENCY: ${INGESTOR_CONCURRENCY:-4}
+  REPUTATION_RETENTION: ${REPUTATION_RETENTION:-720h}
+  FEED_HISTORY_RETENTION: ${FEED_HISTORY_RETENTION:-720h}
+  METRICS_HOST: 0.0.0.0
+
+x-app: &app
+  restart: unless-stopped
+  init: true
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  tmpfs: [/tmp]
+  logging: &logs
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  networks: [beon]
+  volumes: &read-volumes
+    - ${PROJECT_ROOT:-/opt/beon-ipquality}/configs:/app/configs:ro
+    - ${MMDB_HOST_DIR:-/opt/beon-ipquality/data/mmdb}:/app/data/mmdb:ro
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ipquality}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    mem_limit: ${POSTGRES_MEMORY:-768m}
+    shm_size: 128m
+    logging: *logs
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [beon]
+  migrate:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: "no"
+    entrypoint: [bash, /scripts/migrate.sh]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-beon}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-ipquality}
+      MIGRATIONS_DIR: /migrations
+    volumes:
+      - ${PROJECT_ROOT:-/opt/beon-ipquality}/migrations:/migrations:ro
+      - ${PROJECT_ROOT:-/opt/beon-ipquality}/scripts/migrate.sh:/scripts/migrate.sh:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    logging: *logs
+    networks: [beon]
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    command: [redis-server, --requirepass, '${REDIS_PASSWORD:?set REDIS_PASSWORD}', --maxmemory, '${REDIS_MAXMEMORY:-128mb}', --maxmemory-policy, allkeys-lru]
+    # Cache is disposable; no AOF or backup is needed.
+    mem_limit: ${REDIS_MEMORY:-192m}
+    logging: *logs
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [beon]
+  ingestor-init:
+    <<: *app
+    image: ${INGESTOR_IMAGE:?set INGESTOR_IMAGE to release digest}
+    restart: "no"
+    environment: *app-env
+    command: [-config, /app/configs/config.yaml, -feeds, /app/configs/feeds.yaml, -once]
+    mem_limit: ${INGESTOR_MEMORY:-768m}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  compiler-init:
+    <<: *app
+    image: ${COMPILER_IMAGE:?set COMPILER_IMAGE to release digest}
+    restart: "no"
+    environment: *app-env
+    command: [-config, /app/configs/config.yaml, -oneshot]
+    mem_limit: ${COMPILER_MEMORY:-2g}
+    volumes: &write-volumes
+      - ${PROJECT_ROOT:-/opt/beon-ipquality}/configs:/app/configs:ro
+      - ${MMDB_HOST_DIR:-/opt/beon-ipquality/data/mmdb}:/app/data/mmdb
+    depends_on:
+      ingestor-init: {condition: service_completed_successfully}
+  api:
+    <<: *app
+    image: ${API_IMAGE:?set API_IMAGE to release digest}
+    environment:
+      <<: *app-env
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+    ports: ['127.0.0.1:${API_PORT:-8080}:8080']
+    mem_limit: ${API_MEMORY:-256m}
+    depends_on:
+      compiler-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/health]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  ingestor:
+    <<: *app
+    image: ${INGESTOR_IMAGE:?set INGESTOR_IMAGE}
+    environment:
+      <<: *app-env
+      INGESTOR_SKIP_INITIAL: "true"
+      METRICS_PORT: "9091"
+    mem_limit: ${INGESTOR_MEMORY:-768m}
+    depends_on:
+      compiler-init: {condition: service_completed_successfully}
+  compiler:
+    <<: *app
+    image: ${COMPILER_IMAGE:?set COMPILER_IMAGE}
+    environment:
+      <<: *app-env
+      METRICS_PORT: "9092"
+    command: [-config, /app/configs/config.yaml, -skip-initial]
+    volumes: *write-volumes
+    mem_limit: ${COMPILER_MEMORY:-2g}
+    depends_on:
+      compiler-init: {condition: service_completed_successfully}
+  judge:
+    <<: *app
+    image: ${JUDGE_IMAGE:?set JUDGE_IMAGE}
+    profiles: [active-scanning]
+    environment:
+      <<: *app-env
+      SERVER_HOST: 0.0.0.0
+    ports: ['127.0.0.1:${JUDGE_PORT:-8081}:8081']
+    mem_limit: ${JUDGE_MEMORY:-256m}
+    depends_on:
+      api: {condition: service_healthy}
+
+networks:
+  beon:
+volumes:
+  postgres_data:

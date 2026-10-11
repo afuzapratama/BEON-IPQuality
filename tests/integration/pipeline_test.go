@@ -67,12 +67,14 @@ func TestPipelineWithPostgresRedisAndFixtureFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	var failing atomic.Bool
+	var payload atomic.Value
+	payload.Store("8.8.8.0/24\n2606:4700:4700::1111\n")
 	feedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if failing.Load() {
 			w.WriteHeader(503)
 			return
 		}
-		fmt.Fprint(w, "8.8.8.0/24\n2606:4700:4700::1111\n")
+		fmt.Fprint(w, payload.Load().(string))
 	}))
 	defer feedServer.Close()
 	cfg, err := config.Load(filepath.Join("..", "..", "configs", "config.yaml"))
@@ -202,6 +204,35 @@ whitelist:
 	if ipv6 := check("2606:4700:4700::1111"); ipv6.Score != 16 {
 		t.Fatalf("IPv6 score: %+v", ipv6)
 	}
+
+	// A smaller complete source expires removed IPs instead of retaining signals.
+	payload.Store("2606:4700:4700::1111\n")
+	if _, _, stored, err := ing.RunOnce(ctx); err != nil || stored != 1 {
+		t.Fatalf("smaller source: %d %v", stored, err)
+	}
+	var active int
+	if err := db.Pool().QueryRow(ctx, "SELECT count(*) FROM ip_reputation WHERE expires_at>NOW()").Scan(&active); err != nil || active != 1 {
+		t.Fatalf("removed IP remained active: %d %v", active, err)
+	}
+	if err := comp.Compile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.ReloadIfChanged(cfg.MMDB.OutputPath, "", cfg.MMDB.GeoLite2ASNPath); err != nil {
+		t.Fatal(err)
+	}
+	if removed := check("8.8.8.8"); removed.Score != 0 || removed.IsProxy {
+		t.Fatalf("removed source signal leaked: %+v", removed)
+	}
+	payload.Store("8.8.8.0/24\n2606:4700:4700::1111\n")
+	if _, _, _, err := ing.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := comp.Compile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.ReloadIfChanged(cfg.MMDB.OutputPath, "", cfg.MMDB.GeoLite2ASNPath); err != nil {
+		t.Fatal(err)
+	}
 	// Recompiling after history has aged must not disguise an old feed as fresh.
 	if _, err := db.Pool().Exec(ctx, "UPDATE feed_fetch_history SET created_at=NOW()-INTERVAL '3 hours'"); err != nil {
 		t.Fatal(err)
@@ -239,6 +270,9 @@ whitelist:
 	if _, _, _, err := ing.RunOnce(ctx); err == nil {
 		t.Fatal("failed storage returned success")
 	}
+	if err := db.Pool().QueryRow(ctx, "SELECT count(*) FROM ip_reputation WHERE expires_at>NOW()").Scan(&active); err != nil || active != 2 {
+		t.Fatal("failed publication altered previous complete source")
+	}
 	if _, err := db.Pool().Exec(ctx, "ALTER TABLE ip_reputation DROP CONSTRAINT reject_fixture"); err != nil {
 		t.Fatal(err)
 	}
@@ -259,6 +293,23 @@ whitelist:
 	redisCache.Close()
 	if fallback := check("8.8.8.10"); fallback.Cached || fallback.Score != 30 {
 		t.Fatalf("Redis outage did not fall back: %+v", fallback)
+	}
+	if _, err := db.Pool().Exec(ctx, `INSERT INTO feed_fetch_history(feed_name,source_url,status,created_at) VALUES ('retention-fixture','fixture','success',NOW()-INTERVAL '100 days'),('retention-fixture','fixture','success',NOW()-INTERVAL '50 days'),('retention-fixture','fixture','error',NOW()-INTERVAL '45 days')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool().Exec(ctx, `INSERT INTO ip_reputation(ip_start,ip_end,source,threat_type,expires_at) VALUES ('9.9.9.9','9.9.9.9','retention-fixture','proxy',NOW()-INTERVAL '40 days')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PruneHistory(ctx, 30*24*time.Hour, 30*24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	var expiredRows int
+	if err := db.Pool().QueryRow(ctx, "SELECT count(*) FROM ip_reputation WHERE source='retention-fixture'").Scan(&expiredRows); err != nil || expiredRows != 0 {
+		t.Fatal("expired reputation history was not pruned")
+	}
+	var retained int
+	if err := db.Pool().QueryRow(ctx, "SELECT count(*) FROM feed_fetch_history WHERE feed_name='retention-fixture'").Scan(&retained); err != nil || retained != 2 {
+		t.Fatalf("retention lost latest success/attempt: %d %v", retained, err)
 	}
 	bytesBefore, err := os.ReadFile(cfg.MMDB.OutputPath)
 	if err != nil {

@@ -146,3 +146,17 @@ func ParseSchedule(schedule string) (time.Duration, error) {
 		return 0, nil
 	}
 }
+
+// FreshnessBudget allows one source schedule interval plus publication/retry time.
+func FreshnessBudget(schedule string, now time.Time, compile, reload, fetch time.Duration) (time.Duration, error) {
+	parsed, err := cron.ParseStandard(schedule)
+	if err != nil {
+		return 0, err
+	}
+	next := parsed.Next(now)
+	second := parsed.Next(next)
+	if next.IsZero() || second.IsZero() {
+		return 0, fmt.Errorf("schedule has no future run")
+	}
+	return second.Sub(next) + compile + reload + fetch, nil
+}

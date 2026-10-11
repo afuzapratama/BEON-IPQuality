@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
-FROM golang:1.27.2-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 ARG VERSION=dev
 ARG BUILD_TIME=unknown
@@ -11,14 +13,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
       -o /out/api ./cmd/api && \
-    CGO_ENABLED=0 go build -trimpath \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
       -o /out/ingestor ./cmd/ingestor && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/compiler ./cmd/compiler && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/judge ./cmd/judge
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/compiler ./cmd/compiler && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/judge ./cmd/judge
 
 FROM alpine:3.22 AS runtime
 RUN apk add --no-cache ca-certificates tzdata && \

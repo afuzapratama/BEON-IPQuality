@@ -99,6 +99,8 @@ scoring:
 
 # Ingestor Configuration
 ingestor:
+  reputation_retention: 720h
+  history_retention: 720h
   # Enable/disable the ingestor service
   enabled: true
   # Number of concurrent fetchers

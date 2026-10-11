@@ -47,7 +47,7 @@ func New(cfg *config.Config, feedsCfg *config.FeedsConfig, db *database.Postgres
 		feedsConfig: feedsCfg,
 		httpClient:  httpClient,
 		db:          db,
-		cron:        cron.New(), // Standard 5-field cron format (minute, hour, day, month, weekday)
+		cron:        cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger))), // Standard 5-field cron format (minute, hour, day, month, weekday)
 	}, nil
 }
 
@@ -94,6 +94,13 @@ func (i *Ingestor) Start(ctx context.Context) error {
 			logger.Error(fmt.Sprintf("Failed to schedule whitelist refresh: %v", err))
 		}
 	}
+	if _, err := i.cron.AddFunc("@daily", func() {
+		if err := i.db.PruneHistory(ctx, i.config.Ingestor.ReputationRetention, i.config.Ingestor.HistoryRetention); err != nil {
+			logger.Error(fmt.Sprintf("Retention cleanup failed: %v", err))
+		}
+	}); err != nil {
+		return err
+	}
 	i.cron.Start()
 
 	if !i.config.Ingestor.SkipInitial {
@@ -120,7 +127,8 @@ func (i *Ingestor) Stop() {
 		return
 	}
 
-	i.cron.Stop()
+	stopped := i.cron.Stop()
+	<-stopped.Done()
 	i.wg.Wait()
 	i.running = false
 }
@@ -209,7 +217,12 @@ func (i *Ingestor) processFeedWithStats(ctx context.Context, feedName string, fe
 		entries, sourceErr := i.fetchSource(ctx, source, feedConfig)
 		stored := 0
 		if sourceErr == nil {
-			stored, sourceErr = i.storeEntriesWithCount(ctx, entries)
+			budget, budgetErr := config.FreshnessBudget(feedConfig.Schedule, start, i.config.MMDB.CompileInterval, i.config.MMDB.ReloadInterval, i.config.Ingestor.HTTPTimeout*time.Duration(i.config.Ingestor.MaxRetries+1)+i.config.Ingestor.RetryDelay*time.Duration(i.config.Ingestor.MaxRetries))
+			if budgetErr != nil {
+				sourceErr = budgetErr
+			} else {
+				stored, sourceErr = i.storeSourceSnapshot(ctx, entries, time.Now().Add(2*budget))
+			}
 		}
 		totalEntries += len(entries)
 		totalStored += stored
@@ -638,4 +651,28 @@ func (i *Ingestor) FetchFeed(ctx context.Context, feedName string) error {
 
 	_, _, err := i.processFeedWithStats(ctx, feedName, feed)
 	return err
+}
+
+func (i *Ingestor) storeSourceSnapshot(ctx context.Context, entries []models.FeedEntry, expiry time.Time) (int, error) {
+	if i.db == nil {
+		return 0, fmt.Errorf("reputation storage is not configured")
+	}
+	if len(entries) == 0 {
+		return 0, fmt.Errorf("empty source snapshot")
+	}
+	rows := make([]database.IPReputationEntry, 0, len(entries))
+	for _, entry := range entries {
+		row := database.IPReputationEntry{Source: entry.Source, ThreatType: entry.ThreatType, Confidence: entry.Confidence, Weight: entry.Weight}
+		if entry.Prefix.IsValid() {
+			row.IPStart, row.IPEnd = database.IPRangeFromPrefix(entry.Prefix)
+			value := entry.Prefix.String()
+			row.CIDR = &value
+		} else if entry.IP.IsValid() {
+			row.IPStart, row.IPEnd = database.IPRangeFromAddr(entry.IP)
+		} else {
+			return 0, fmt.Errorf("invalid parsed entry")
+		}
+		rows = append(rows, row)
+	}
+	return i.db.ReplaceReputationSource(ctx, entries[0].Source, rows, expiry)
 }

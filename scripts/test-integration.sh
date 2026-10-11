@@ -13,7 +13,7 @@ docker run -d --name "$beon_test_postgres" -e POSTGRES_PASSWORD=integration-only
 docker run -d --name "$beon_test_redis" -p 127.0.0.1::6379 redis:7-alpine >/dev/null
 beon_test_ready=false
 for beon_test_attempt in {1..30}; do
-  if docker exec "$beon_test_postgres" pg_isready -U postgres -d beon_test >/dev/null 2>&1 && docker exec "$beon_test_redis" redis-cli ping >/dev/null 2>&1; then
+  if docker exec "$beon_test_postgres" pg_isready -h 127.0.0.1 -U postgres -d beon_test >/dev/null 2>&1 && docker exec "$beon_test_redis" redis-cli ping >/dev/null 2>&1; then
     beon_test_ready=true
     break
   fi

@@ -127,13 +127,15 @@ type ScoringConfig struct {
 
 // IngestorConfig holds ingestor service configuration
 type IngestorConfig struct {
-	SkipInitial bool          `mapstructure:"skip_initial"`
-	Enabled     bool          `mapstructure:"enabled"`
-	Concurrency int           `mapstructure:"concurrency"`
-	HTTPTimeout time.Duration `mapstructure:"http_timeout"`
-	MaxRetries  int           `mapstructure:"max_retries"`
-	RetryDelay  time.Duration `mapstructure:"retry_delay"`
-	UserAgent   string        `mapstructure:"user_agent"`
+	ReputationRetention time.Duration `mapstructure:"reputation_retention"`
+	HistoryRetention    time.Duration `mapstructure:"history_retention"`
+	SkipInitial         bool          `mapstructure:"skip_initial"`
+	Enabled             bool          `mapstructure:"enabled"`
+	Concurrency         int           `mapstructure:"concurrency"`
+	HTTPTimeout         time.Duration `mapstructure:"http_timeout"`
+	MaxRetries          int           `mapstructure:"max_retries"`
+	RetryDelay          time.Duration `mapstructure:"retry_delay"`
+	UserAgent           string        `mapstructure:"user_agent"`
 }
 
 // APIConfig holds API configuration
@@ -258,6 +260,9 @@ func (c *Config) Validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid configuration: server.port must be between 1 and 65535")
 	}
+	if c.Ingestor.ReputationRetention < 0 || c.Ingestor.HistoryRetention < 0 {
+		return fmt.Errorf("invalid configuration: retention cannot be negative")
+	}
 	if c.Ingestor.Concurrency < 1 {
 		return fmt.Errorf("invalid configuration: ingestor.concurrency must be at least 1")
 	}
@@ -282,55 +287,60 @@ func (c *Config) Validate() error {
 
 func bindEnvironment(v *viper.Viper) {
 	bindings := map[string][]string{
-		"environment":                {"APP_ENV", "ENVIRONMENT"},
-		"server.host":                {"SERVER_HOST", "API_HOST"},
-		"server.trusted_proxies":     {"TRUSTED_PROXIES"},
-		"ingestor.skip_initial":      {"INGESTOR_SKIP_INITIAL"},
-		"api.admin_key":              {"ADMIN_API_KEY"},
-		"server.port":                {"SERVER_PORT", "API_PORT", "PORT"},
-		"database.postgres.host":     {"DB_HOST"},
-		"database.postgres.url":      {"DATABASE_URL"},
-		"database.postgres.port":     {"DB_PORT"},
-		"database.postgres.database": {"DB_NAME", "POSTGRES_DB"},
-		"database.postgres.username": {"DB_USER", "POSTGRES_USER"},
-		"database.postgres.password": {"DB_PASSWORD", "POSTGRES_PASSWORD"},
-		"database.postgres.ssl_mode": {"DB_SSL_MODE"},
-		"redis.operation_timeout":    {"REDIS_OPERATION_TIMEOUT"},
-		"mmdb.feeds_path":            {"FEEDS_PATH"},
-		"mmdb.max_age":               {"MMDB_MAX_AGE"},
-		"mmdb.compile_interval":      {"MMDB_COMPILE_INTERVAL"},
-		"mmdb.reload_interval":       {"MMDB_RELOAD_INTERVAL"},
-		"redis.enabled":              {"REDIS_ENABLED"},
-		"redis.url":                  {"REDIS_URL"},
-		"redis.host":                 {"REDIS_HOST"},
-		"redis.port":                 {"REDIS_PORT"},
-		"redis.password":             {"REDIS_PASSWORD"},
-		"mmdb.reputation_path":       {"MMDB_PATH"},
-		"mmdb.geolite2_city_path":    {"GEOIP_CITY_PATH"},
-		"mmdb.geolite2_asn_path":     {"GEOIP_ASN_PATH"},
-		"mmdb.output_path":           {"MMDB_OUTPUT"},
-		"api.auth_enabled":           {"API_AUTH_ENABLED"},
-		"api.api_key":                {"API_KEY", "API_MASTER_KEY"},
-		"api.rate_limit":             {"RATE_LIMIT"},
-		"api.rate_limit_window":      {"RATE_LIMIT_WINDOW"},
-		"api.cors.enabled":           {"API_CORS_ENABLED"},
-		"api.cors.allow_origins":     {"API_CORS_ALLOW_ORIGINS"},
-		"judge.port":                 {"JUDGE_PORT"},
-		"judge.scan_timeout":         {"SCAN_TIMEOUT_SECONDS"},
-		"judge.scan_workers":         {"SCAN_WORKERS"},
-		"judge.rate_limit":           {"JUDGE_RATE_LIMIT"},
-		"metrics.host":               {"METRICS_HOST"},
-		"metrics.port":               {"METRICS_PORT"},
-		"metrics.enabled":            {"METRICS_ENABLED"},
-		"metrics.path":               {"METRICS_PATH"},
-		"logging.level":              {"LOG_LEVEL"},
-		"logging.format":             {"LOG_FORMAT"},
-		"clickhouse.enabled":         {"CLICKHOUSE_ENABLED"},
-		"clickhouse.host":            {"CLICKHOUSE_HOST"},
-		"clickhouse.port":            {"CLICKHOUSE_PORT"},
-		"clickhouse.database":        {"CLICKHOUSE_DATABASE"},
-		"clickhouse.username":        {"CLICKHOUSE_USERNAME"},
-		"clickhouse.password":        {"CLICKHOUSE_PASSWORD"},
+		"environment":                       {"APP_ENV", "ENVIRONMENT"},
+		"server.host":                       {"SERVER_HOST", "API_HOST"},
+		"server.trusted_proxies":            {"TRUSTED_PROXIES"},
+		"ingestor.concurrency":              {"INGESTOR_CONCURRENCY"},
+		"ingestor.reputation_retention":     {"REPUTATION_RETENTION"},
+		"ingestor.history_retention":        {"FEED_HISTORY_RETENTION"},
+		"ingestor.skip_initial":             {"INGESTOR_SKIP_INITIAL"},
+		"api.admin_key":                     {"ADMIN_API_KEY"},
+		"server.port":                       {"SERVER_PORT", "API_PORT", "PORT"},
+		"database.postgres.max_connections": {"DB_MAX_CONNECTIONS"},
+		"database.postgres.min_connections": {"DB_MIN_CONNECTIONS"},
+		"database.postgres.host":            {"DB_HOST"},
+		"database.postgres.url":             {"DATABASE_URL"},
+		"database.postgres.port":            {"DB_PORT"},
+		"database.postgres.database":        {"DB_NAME", "POSTGRES_DB"},
+		"database.postgres.username":        {"DB_USER", "POSTGRES_USER"},
+		"database.postgres.password":        {"DB_PASSWORD", "POSTGRES_PASSWORD"},
+		"database.postgres.ssl_mode":        {"DB_SSL_MODE"},
+		"redis.operation_timeout":           {"REDIS_OPERATION_TIMEOUT"},
+		"mmdb.feeds_path":                   {"FEEDS_PATH"},
+		"mmdb.max_age":                      {"MMDB_MAX_AGE"},
+		"mmdb.compile_interval":             {"MMDB_COMPILE_INTERVAL"},
+		"mmdb.reload_interval":              {"MMDB_RELOAD_INTERVAL"},
+		"redis.enabled":                     {"REDIS_ENABLED"},
+		"redis.url":                         {"REDIS_URL"},
+		"redis.host":                        {"REDIS_HOST"},
+		"redis.port":                        {"REDIS_PORT"},
+		"redis.password":                    {"REDIS_PASSWORD"},
+		"mmdb.reputation_path":              {"MMDB_PATH"},
+		"mmdb.geolite2_city_path":           {"GEOIP_CITY_PATH"},
+		"mmdb.geolite2_asn_path":            {"GEOIP_ASN_PATH"},
+		"mmdb.output_path":                  {"MMDB_OUTPUT"},
+		"api.auth_enabled":                  {"API_AUTH_ENABLED"},
+		"api.api_key":                       {"API_KEY", "API_MASTER_KEY"},
+		"api.rate_limit":                    {"RATE_LIMIT"},
+		"api.rate_limit_window":             {"RATE_LIMIT_WINDOW"},
+		"api.cors.enabled":                  {"API_CORS_ENABLED"},
+		"api.cors.allow_origins":            {"API_CORS_ALLOW_ORIGINS"},
+		"judge.port":                        {"JUDGE_PORT"},
+		"judge.scan_timeout":                {"SCAN_TIMEOUT_SECONDS"},
+		"judge.scan_workers":                {"SCAN_WORKERS"},
+		"judge.rate_limit":                  {"JUDGE_RATE_LIMIT"},
+		"metrics.host":                      {"METRICS_HOST"},
+		"metrics.port":                      {"METRICS_PORT"},
+		"metrics.enabled":                   {"METRICS_ENABLED"},
+		"metrics.path":                      {"METRICS_PATH"},
+		"logging.level":                     {"LOG_LEVEL"},
+		"logging.format":                    {"LOG_FORMAT"},
+		"clickhouse.enabled":                {"CLICKHOUSE_ENABLED"},
+		"clickhouse.host":                   {"CLICKHOUSE_HOST"},
+		"clickhouse.port":                   {"CLICKHOUSE_PORT"},
+		"clickhouse.database":               {"CLICKHOUSE_DATABASE"},
+		"clickhouse.username":               {"CLICKHOUSE_USERNAME"},
+		"clickhouse.password":               {"CLICKHOUSE_PASSWORD"},
 	}
 	for key, envNames := range bindings {
 		args := append([]string{key}, envNames...)
@@ -380,6 +390,8 @@ func setDefaults(v *viper.Viper) {
 
 	// Ingestor defaults
 	v.SetDefault("ingestor.enabled", true)
+	v.SetDefault("ingestor.reputation_retention", "720h")
+	v.SetDefault("ingestor.history_retention", "720h")
 	v.SetDefault("ingestor.skip_initial", false)
 	v.SetDefault("ingestor.concurrency", 10)
 	v.SetDefault("ingestor.http_timeout", "30s")

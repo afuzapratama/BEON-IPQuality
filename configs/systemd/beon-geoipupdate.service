@@ -1,0 +1,16 @@
+[Unit]
+Description=Update MaxMind databases for BEON-IPQuality
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/beon-ipquality/geoipupdate.env
+WorkingDirectory=/opt/beon-ipquality
+ExecStart=/opt/beon-ipquality/scripts/update-geoip.sh
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/beon-ipquality/data/mmdb

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -18,10 +19,23 @@ import (
 
 func main() {
 	// Parse command line flags
+	verifyDirectory := flag.String("verify-mmdb", "", "Validate an MMDB directory offline and exit")
 	configPath := flag.String("config", "./configs/config.yaml", "Path to configuration file")
 	skipInitial := flag.Bool("skip-initial", false, "Skip initial compilation after validating an existing MMDB")
 	oneshot := flag.Bool("oneshot", false, "Run compilation once and exit")
 	flag.Parse()
+	if *verifyDirectory != "" {
+		reader, err := mmdb.VerifyDirectory(*verifyDirectory)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer reader.Close()
+		if err := json.NewEncoder(os.Stdout).Encode(reader.Stats()); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Load configuration
 	cfg, err := config.LoadFromEnv(*configPath)

@@ -25,7 +25,7 @@ docker compose ps
 curl http://127.0.0.1:8080/health
 ```
 
-Startup pertama menjalankan migrasi, ingest awal, dan kompilasi MMDB sebelum API dinyalakan. Proses ini bergantung pada ukuran feed dan koneksi jaringan. API secara default hanya tersedia di `127.0.0.1:8080`; gunakan reverse proxy HTTPS sebelum mengubah `API_BIND_ADDRESS` menjadi `0.0.0.0`.
+Startup pertama menjalankan migrasi berversi/checksum melalui service `migrate`, ingest awal, dan kompilasi MMDB sebelum API dinyalakan. Proses ini bergantung pada ukuran feed dan koneksi jaringan. API secara default hanya tersedia di `127.0.0.1:8080`; gunakan reverse proxy HTTPS sebelum mengubah `API_BIND_ADDRESS` menjadi `0.0.0.0`.
 
 Profil opsional:
 
@@ -115,6 +115,8 @@ Perintah ringkas juga tersedia melalui `make test`, `make test-race`, `make vet`
 DATABASE_URL='postgresql://user:pass@host/db?sslmode=require' make migrate
 ```
 
+Kontrak API lengkap berada di [API.md](docs/API.md) dan [OpenAPI](docs/openapi.yaml).
+
 Konfigurasi file berada di `configs/config.yaml` dan `configs/feeds.yaml`. Semua executable menggunakan environment override, termasuk `DATABASE_URL`, `REDIS_URL`, `PORT`, `API_KEY`, dan path MMDB. Lihat `.env.example` serta `railway.env.example`.
 
 ## Deployment Railway
@@ -128,3 +130,11 @@ Image API dapat dibangun melalui `railway.json`, tetapi MMDB bukan bagian dari i
 ## Lisensi
 
 [MIT](LICENSE)
+
+## Paket produksi ARM64
+
+Jalur VPS langsung memakai [Compose produksi](deployments/compose.production.yml) dan [panduan VPS ARM64](docs/VPS_ARM_DEPLOYMENT.md), dengan [backup/restore/rollback](docs/BACKUP_RESTORE_ROLLBACK.md). Image release dan `deployment-lock.env` memakai digest; source tidak dibuild ulang di VPS. Bind mount `/opt/beon-ipquality/data/mmdb` ke `/app/data/mmdb` membuat output geoipupdate host dibaca compiler/API.
+
+Kredensial MaxMind tetap pada path file pilihan pengguna. `GEOIP_CONFIG_FILE=/path/GeoIP.conf MMDB_HOST_DIR=/opt/beon-ipquality/data/mmdb ./scripts/update-geoip.sh` mengarahkan hasil update ke direktori proyek; timer systemd tersedia pada `configs/systemd`. File harus memuat AccountID, LicenseKey dan EditionIDs City/ASN. Actual download dan pemasangan timer menunggu akses VPS serta path file tersebut.
+
+Refresh source sekarang atomik dan menggantikan sinyal aktif source tersebut. Removed IP langsung expired; source gagal/empty/malformed tidak menghapus snapshot lama. TTL dua freshness budget, expired history 30 hari dan cleanup harian; lihat kebijakan pada panduan VPS. Latest attempt/success feed dipertahankan walau history lain dipruning.
