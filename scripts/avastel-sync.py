@@ -42,6 +42,10 @@ def refresh(prepare_only=False):
             destination.mkdir(mode=0o700)
             for name in ('proxy-ips.txt','manifest.json'):
                 shutil.copyfile(stage/name,destination/name)
+            manifest=json.loads((destination/'manifest.json').read_text())
+            manifest['production_enabled']=True
+            manifest['usage_scope']='private production normalized account source'
+            (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
             link=DATA/'next'
             if link.is_symlink():link.unlink()
             link.symlink_to(destination.name,target_is_directory=True)
