@@ -56,5 +56,6 @@ menganggap monitor ini SLA alert real-time.
 
 Operator belum mempunyai label independen; alur [review label](LABEL_REVIEW_WORKFLOW.md)
 sudah siap. Accuracy gate tetap terbuka sampai cohort/prediksi holdout tersedia.
-Full disaster restore RTO, sustained/high-load SLO dan disk growth masih perlu
-pengukuran. Analytics/history stack berat tidak diaktifkan pada pilot privat ini.
+Restore Bunny ke host terpisah sudah lulus (129,334 detik setelah decrypt/extract);
+lihat [runbook dan evidence](DISASTER_RECOVERY_DRILL.md). RTO end-to-end termasuk
+provisioning/DNS/TLS, sustained/high-load SLO dan disk growth masih perlu pengukuran. Analytics/history stack berat tidak diaktifkan pada pilot privat ini.

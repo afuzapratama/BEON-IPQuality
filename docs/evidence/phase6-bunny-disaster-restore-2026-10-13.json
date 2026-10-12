@@ -1,0 +1,61 @@
+{
+  "scope": "Bunny backup reconstructed on a separate host; isolated DB/Redis/MMDB, synthetic credentials, loopback API. No public DNS/TLS or VPS rebuild.",
+  "backup_id": "20261012T234730Z-20383",
+  "project": "beon-dr-fadbd6716839",
+  "phases": {
+    "start-storage": {
+      "seconds": 10.137,
+      "success": true
+    },
+    "restore-database": {
+      "seconds": 19.805,
+      "success": true
+    },
+    "migrate": {
+      "seconds": 0.83,
+      "success": true
+    },
+    "database-check": {
+      "seconds": 0.194,
+      "success": true
+    },
+    "refresh-feeds": {
+      "seconds": 45.46,
+      "success": true
+    },
+    "recompile": {
+      "seconds": 36.149,
+      "success": true
+    },
+    "verify-mmdb": {
+      "seconds": 8.005,
+      "success": true
+    },
+    "start-api": {
+      "seconds": 0.802,
+      "success": true
+    },
+    "sample-restored-account": {
+      "seconds": 0.167,
+      "success": true
+    },
+    "cleanup": {
+      "seconds": 2.393,
+      "success": true
+    }
+  },
+  "database_rows": 1287574,
+  "success": true,
+  "health": "healthy",
+  "account_samples": 25,
+  "ipv6_passed": true,
+  "whitelist_passed": true,
+  "auth_passed": true,
+  "dns_score": 20,
+  "provider_key_restored": true,
+  "geoip_credentials_restored": true,
+  "operations_credentials_restored": true,
+  "data_version": "7ddef44ea092508f6f0def32b44f7dc76f759d720bd27cce4de68fada20ac247",
+  "duration_seconds": 129.334,
+  "cleanup_passed": true
+}

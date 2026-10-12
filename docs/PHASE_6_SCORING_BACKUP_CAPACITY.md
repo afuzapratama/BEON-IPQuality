@@ -335,3 +335,25 @@ status terbaru mengikuti bagian ini.
 ### Penyesuaian jadwal MaxMind — 13 Oktober 2026
 
 Timer GeoIP sebelumnya harian 03:20 WIB diganti Rabu/Sabtu 12:00 WIB + jitter maksimal 30 menit. City mengikuti rilis Selasa/Jumat; ASN yang rilis harian sengaja ikut jadwal dua kali seminggu. Jam rilis upstream tidak dijamin, sehingga jeda ini bukan SLA ketersediaan rilis. Output tetap pada direktori MMDB proyek.
+
+### Review label dan persiapan merge — 13 Oktober 2026
+
+Cohort diagnostik 258 IP sudah disimpan privat dengan lembar review terpisah dari
+prediksi: 250 account-feed samples + delapan DNS IPv4/IPv6. Seluruh label masih
+unreviewed; jumlah approved independen nol. Prediksi proxy/VPN/datacenter/risky
+bukan ground truth, sehingga precision/recall dan tuning bobot belum dilakukan.
+Alur collect-after-freeze tersedia melalui `collect-reviewed-predictions.py`.
+Lihat [workflow review](LABEL_REVIEW_WORKFLOW.md) dan [aggregate cohort](evidence/phase6-label-review-cohort-2026-10-13.json).
+
+Email CI gagal 13 Oktober berasal dari run 38313090465: download dependency Go
+mengalami upstream HTTP/2 INTERNAL_ERROR. Run berikutnya 38323416441 lulus semua
+job. Dockerfile sekarang retry download maksimal tiga kali dan tetap gagal jika
+seluruh attempt gagal. CI operations juga menjalankan test scoring/review; test
+lokal saat perubahan ini: 15 scoring/review + sembilan operations lulus.
+
+Pemulihan host terpisah tersedia melalui [runbook](DISASTER_RECOVERY_DRILL.md).
+Restore drill memeriksa checksum, ledger migrasi, refresh feed reguler, compile dan
+verify MMDB, health/auth/IPv6/whitelist serta account lookup. Ini tidak mengukur
+provisioning OS atau pemulihan DNS/TLS dari kehilangan VPS.
+
+Hasil drill 13 Oktober 2026: backup Bunny `20261012T234730Z-20383`, restore 1.287.574 rows, migrasi/refresh/compile/verify lulus, API healthy dan 25 account samples, auth/IPv6/whitelist lulus. Durasi 129,334 detik setelah download/decrypt/extract; cleanup project uji lulus. [Evidence](evidence/phase6-bunny-disaster-restore-2026-10-13.json).

@@ -8,8 +8,8 @@ Hasil verifikasi 13 Oktober 2026: API privat ARM64 berjalan dengan runtime
 [`v1.1.0-rc.4`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.4)
 dan [manifest image berbasis digest](deployments/releases/v1.1.0-rc.4.env).
 VPS memakai Docker Compose, reverse proxy Caddy yang sudah ada, updater MaxMind
-native, dan monitoring Glances tanpa aaPanel. Perubahan berada pada branch
-`fix/production-readiness`, dengan [draft PR #1](https://github.com/afuzapratama/BEON-IPQuality/pull/1).
+native, dan monitoring Glances tanpa aaPanel. Perubahan produksi dan bukti validasi
+direview melalui [PR #1](https://github.com/afuzapratama/BEON-IPQuality/pull/1); status merge tersedia di GitHub.
 
 | Bagian | Status pilot |
 |---|---|
@@ -27,8 +27,8 @@ Kuota publik pilot 1.000 request/menit/key. Key tidak disimpan oleh halaman look
 
 Dataset akun diperbarui **setiap 7 jam**, dengan refresh pemulihan setelah boot.
 [Alur produksi privat](docs/AVASTEL_PRIVATE_PRODUCTION.md) mengatur key, validasi,
-refresh atomik dan retention. Workflow uptime aktif di `main`; branch aplikasi
-belum seluruhnya di-merge. Phase 6 belum menutup seluruh gate produksi. Bukti pengujian, batas kapasitas,
+refresh atomik dan retention. Workflow uptime aktif di `main`. Phase 6 belum
+menutup seluruh gate produksi. Bukti pengujian, batas kapasitas,
 dan pekerjaan tersisa tercatat pada [laporan phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md).
 
 ## Komponen
@@ -264,3 +264,5 @@ di [bukti kapasitas phase 6](docs/evidence/phase6-arm-capacity-2026-10-12.json).
 
 Hasil yang sudah terukur: [validasi rc4](docs/OPERATIONS_RC4_VALIDATION.md).
 Checklist pelaksanaan mengikuti [tracker phase perbaikan](docs/PHASE_PERBAIKAN_DAN_VPS_ARM.md).
+
+Alur validasi berikutnya: [review label independen](docs/LABEL_REVIEW_WORKFLOW.md) dan [uji restore Bunny pada host terpisah](docs/DISASTER_RECOVERY_DRILL.md). Sampel diagnostik bukan ground truth; bobot/threshold tidak dituning tanpa label yang terverifikasi.

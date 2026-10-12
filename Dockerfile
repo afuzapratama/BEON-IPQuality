@@ -10,7 +10,11 @@ WORKDIR /src
 RUN apk add --no-cache ca-certificates git tzdata
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN for attempt in 1 2 3; do \
+      go mod download && break; \
+      if [ "$attempt" = 3 ]; then exit 1; fi; \
+      sleep "$((attempt * 5))"; \
+    done
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \

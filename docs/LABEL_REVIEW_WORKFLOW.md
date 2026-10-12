@@ -43,3 +43,32 @@ python3 scripts/evaluate-scoring.py \
 
 API tetap memakai heuristic family-max. Source akun diberi weight 40/confidence
 0,8 sebagai baseline engineering; skor 32 bukan probabilitas atau angka akurasi.
+
+## Cohort review 13 Oktober 2026
+
+`scripts/prepare-label-review.py` menyiapkan 250 sampel account feed dan delapan
+alamat DNS IPv4/IPv6 sebagai kontrol diagnostik, seluruhnya **unreviewed**.
+Alamat DNS tidak otomatis dilabel non-proxy. File operator privat:
+`/home/natama/Documents/beon-backups/label-review-20261013/reviews-blinded.jsonl`.
+Prediksi ada di file terpisah `predictions-diagnostic.jsonl`; jangan kirim file
+prediksi kepada reviewer. Cohort ini terutama feed-derived dan bukan holdout
+independen. Diperlukan tambahan observasi proxy/VPN/non-proxy yang dimiliki atau
+diizinkan operator, serta provenance dan review overlap. Label yang tidak
+terbukti tetap unknown, termasuk Tor jika belum punya bukti.
+
+Setelah label independen di-approve, jalankan splitter, bekukan tuning/holdout,
+dan kumpulkan prediksi baru; prediksi diagnostic sebelum review tidak dipakai
+untuk mengklaim akurasi:
+
+```bash
+python3 scripts/collect-reviewed-predictions.py \
+  --labels /private/reviewed-v1/tuning-labels.jsonl \
+  --client-env /private/ipproxy-client.env --output /private/tuning-predictions.jsonl
+python3 scripts/evaluate-scoring.py \
+  --labels /private/reviewed-v1/tuning-labels.jsonl \
+  --predictions /private/tuning-predictions.jsonl --threshold 50
+```
+
+Bandingkan threshold offline pada tuning, lalu evaluasi sekali pada holdout
+setelah pilihan dibekukan. Baseline produksi tetap threshold 50 dan account
+weight 40/confidence 0,8 sampai bukti independen cukup untuk perubahan.
