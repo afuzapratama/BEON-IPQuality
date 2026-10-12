@@ -21,18 +21,22 @@ DATA=ROOT/'data/avastel'
 
 def compose(*args):
     subprocess.run(['docker','compose','--env-file',str(ROOT/'.env'),'--env-file',str(ROOT/'deployment-lock.env'),
-                    '-f',str(ROOT/'deployments/compose.production.yml'),*args],cwd=ROOT,check=True,timeout=600)
+                    '-f',str(ROOT/'deployments/compose.production.yml'),*args],cwd=ROOT,check=True,timeout=600,stdin=subprocess.DEVNULL)
 
 
-def refresh():
+def refresh(prepare_only=False):
     DATA.mkdir(mode=0o700,parents=True,exist_ok=True)
     with (DATA/'sync.lock').open('w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         with tempfile.TemporaryDirectory(prefix='fetch-',dir=DATA) as temp:
-            stage=Path(temp)/'dataset'
-            subprocess.run([sys.executable,str(ROOT/'scripts/stage-avastel-account.py'),
+            for attempt in range(3):
+                stage=Path(temp)/('dataset-'+str(attempt))
+                result=subprocess.run([sys.executable,str(ROOT/'scripts/stage-avastel-account.py'),
                             '--key-file',os.environ.get('AVASTEL_KEY_FILE','/etc/beon-ipquality/avastel.key'),
-                            '--output',str(stage)],check=True,timeout=180)
+                            '--output',str(stage)],timeout=180)
+                if result.returncode==0:break
+                if attempt==2:raise RuntimeError('account download failed after retries; previous snapshot retained')
+                time.sleep(30*(attempt+1))
             # One atomic directory switch pairs metadata and data from the same download.
             destination=DATA/('snapshot-'+str(time.time_ns()))
             destination.mkdir(mode=0o700)
@@ -44,11 +48,18 @@ def refresh():
             os.replace(link,DATA/'current')
             compose('run','--rm','--no-deps','ingestor','-config','/app/configs/config.yaml',
                     '-feeds','/app/configs/feeds.avastel-publisher.yaml','-once')
+            if prepare_only:
+                print('Account source prepared in PostgreSQL; bootstrap may continue.')
+                return
             compose('run','--rm','--no-deps','compiler','-config','/app/configs/config.yaml','-oneshot')
             subprocess.run(['docker','compose','--env-file',str(ROOT/'.env'),'--env-file',str(ROOT/'deployment-lock.env'),
                             '-f',str(ROOT/'deployments/compose.production.yml'),'exec','-T','api','sh','-c',
                             'wget -qO- --header="X-API-Key: $ADMIN_API_KEY" --post-data="" http://127.0.0.1:8080/api/v1/reload'],
                            cwd=ROOT,check=True,timeout=30)
+            cleanup_sql = "DELETE FROM ip_reputation WHERE source IN ('Avastel Account/normalized_account','avastel_account/normalized_account') AND expires_at <= NOW() AND last_seen < NOW() - INTERVAL '24 hours';"
+            compose('exec','-T','postgres','sh','-c',
+                    'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"',
+                    'psql','-c',cleanup_sql)
             (DATA/'last-published.json').write_text(json.dumps({'published_at':datetime.now(timezone.utc).isoformat(),
                          'source_sha256':json.loads((destination/'manifest.json').read_text())['normalized_sha256']})+'\n')
             for old in DATA.glob('snapshot-*'):
@@ -81,7 +92,7 @@ def serve():
 
 if __name__=='__main__':
     os.umask(0o077)
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('mode',choices=('refresh','serve'))
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('mode',choices=('refresh','serve','prepare'))
     args=parser.parse_args()
     if args.mode=='serve':serve()
-    else:refresh()
+    else:refresh(prepare_only=args.mode=="prepare")

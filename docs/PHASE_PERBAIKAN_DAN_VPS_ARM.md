@@ -219,3 +219,13 @@ Backup Bunny S3 terenkripsi, full readback/checksum, offsite decrypt/restore nya
 retention guards dan Telegram incident/recovery aktif. External host-outage monitor,
 korpus akurasi independen, sustained load, dataset besar dan reboot/full rollback
 masih gate produksi, bukan pekerjaan yang dianggap selesai.
+
+### 13 Oktober 2026 — produksi privat rc4, HTTPS probe dan recovery drill
+
+Dataset akun aktif sesuai instruksi operator, interval 7 jam, secret tetap privat.
+Probe HTTPS 1.500 request/5 menit zero error; rollback aplikasi dan warm reboot
+lulus (19 detik rollback+rollforward, 28,67 detik HTTPS setelah reboot). Restore
+DB/MMDB terisolasi dan offsite backup terverifikasi, monitor eksternal aktif.
+[Evidence dan batas scope](OPERATIONS_RC4_VALIDATION.md). Alur review label
+independen siap, accuracy belum diukur. SLO/high-load, long-running disk growth
+dan full disaster RTO tetap terbuka; analytics berat belum dibutuhkan.

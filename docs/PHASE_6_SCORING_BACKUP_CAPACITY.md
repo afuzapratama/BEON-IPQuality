@@ -311,3 +311,23 @@ Sebelas Python tests lulus. Lihat
 [evidence 8 GB](evidence/phase6-avastel-8gb-arm-pass-2026-10-13.json).
 Sisa gate: izin penggunaan hasil lookup dataset akun, release compiler immutable,
 holdout independen, sustained/public TLS workload, reboot/rollback/external uptime.
+
+## Produksi privat rc.4 dan penutupan drill — 13 Oktober 2026
+
+Operator meminta dataset akun langsung dipakai pada API privat; integrasi sudah
+aktif dengan update 7 jam, recovery job setelah boot, source HTTP bridge-only,
+key privat, atomic normalized refresh dan compiler lock lintas proses.
+Runtime rc.4 CI/release semua sukses; limit compiler 2,5 GiB/Go 1.800 MiB.
+
+Public HTTPS probe 5 menit/5 req/s: 1.500 HTTP 200, zero error; p95 ~311 ms.
+Live rollback rc4→rc3→rc4 19 detik dengan 502 sementara; warm reboot public healthy
+28,67 detik, layanan/timer/scratch pulih otomatis. Backup rc4 termasuk key akun
+lulus isolated restore + encrypted Bunny readback. Monitor GitHub eksternal
+aktif (~5 menit) dengan tes Telegram incident/recovery sukses.
+
+Operator belum punya korpus independen dan memilih alur review: validator,
+group split dan runbook sudah disiapkan; angka accuracy belum tersedia.
+Dokumen detail: [produksi akun](AVASTEL_PRIVATE_PRODUCTION.md),
+[drill/limits](OPERATIONS_RC4_VALIDATION.md), [review](LABEL_REVIEW_WORKFLOW.md).
+Eksperimen sebelumnya yang menyatakan akun staging/OOM adalah catatan historis;
+status terbaru mengikuti bagian ini.

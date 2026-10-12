@@ -151,6 +151,24 @@ whitelist:
 		t.Fatal(err)
 	}
 	defer comp.Close()
+	// A different compiler process holding the database lock must prevent
+	// this one from loading a second large aggregation/writer into memory.
+	func() {
+		holder, err := db.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer holder.Release()
+		if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock(741852964)"); err != nil {
+			t.Fatal(err)
+		}
+		defer holder.Exec(context.Background(), "SELECT pg_advisory_unlock(741852964)")
+		waitCtx, waitCancel := context.WithTimeout(ctx, 150*time.Millisecond)
+		defer waitCancel()
+		if err := comp.Compile(waitCtx); err == nil {
+			t.Fatal("compiler bypassed cross-process memory lock")
+		}
+	}()
 	if err := comp.Compile(ctx); err != nil {
 		t.Fatal(err)
 	}

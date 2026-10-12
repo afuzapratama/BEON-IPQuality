@@ -4,6 +4,7 @@ from datetime import datetime,timedelta,timezone
 from pathlib import Path
 import tempfile
 import unittest
+import subprocess
 from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('sync',Path(__file__).resolve().parents[2]/'scripts/avastel-sync.py')
@@ -20,5 +21,19 @@ class SyncTest(unittest.TestCase):
      if valid:self.assertEqual(sync.source_snapshot(),snapshot/'proxy-ips.txt')
      else:
       with self.assertRaises(ValueError):sync.source_snapshot()
+
+ def test_prepare_imports_before_bootstrap_without_api_dependency(self):
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp)/'account'
+   def download(command,**kwargs):
+    stage=Path(command[command.index('--output')+1]);stage.mkdir()
+    (stage/'proxy-ips.txt').write_text('8.8.8.8\n')
+    (stage/'manifest.json').write_text('{}')
+    return subprocess.CompletedProcess(command,0)
+   with patch.object(sync,'DATA',root),patch.object(sync.subprocess,'run',side_effect=download),patch.object(sync,'compose') as compose:
+    sync.refresh(prepare_only=True)
+    self.assertEqual(compose.call_count,1)
+    self.assertIn('ingestor',compose.call_args.args)
+    self.assertTrue((root/'current/proxy-ips.txt').exists())
 
 if __name__=='__main__':unittest.main()

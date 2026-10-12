@@ -287,7 +287,7 @@ def checks():
         uploaded = [p for p in verified if (p / "OFFSITE_VERIFIED").is_file()]
         if not uploaded or time.time() - stamp(uploaded[-1].name).timestamp() > 36 * 3600:
             problems.append("No offsite-verified backup in 36 hours")
-    for unit in ["beon-backup.service", "beon-geoipupdate.service", "beon-avastel-update.service"]:
+    for unit in ["beon-backup.service", "beon-geoipupdate.service", "beon-avastel-update.service", "beon-avastel-source.service"]:
         try:
             result = subprocess.check_output(["systemctl", "show", unit, "--value", "-p", "Result"], timeout=5).decode().strip()
             if result != "success":

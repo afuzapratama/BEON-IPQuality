@@ -59,3 +59,17 @@ Batas default 100 IP, sesuai `api.batch_max_size`. Input kosong, JSON salah, ata
 | 503 | MMDB unavailable, snapshot/source stale |
 
 Mayoritas error aplikasi berbentuk `{"error":"code","message":"detail"}`. Error admin dapat memakai `error` berupa kalimat dan `success: false`; 404 admin disabled memakai text/plain. Nginx dapat memberikan error sebelum request mencapai aplikasi. `/api/v1/health` bukan path default yang didukung.
+
+## Dataset akun privat dan waktu pembaruan
+
+Runtime VPS saat ini rc.4, source akun Avastel aktif pada API berkey. Snapshot
+reputasi tetap lokal; API lookup tidak memanggil Avastel per request. Publisher
+memperbarui dataset setiap 7 jam dan sesudah boot untuk recovery. Hanya row
+isProxy=True masuk source proxy; metadata ASN/GeoIP tetap dari pipeline yang
+ada. `sources` dapat menampilkan `Avastel Account/normalized_account`.
+
+Weight 40/confidence 0,8 adalah baseline heuristic, bukan accuracy 80%. Flag
+proxy berbeda dari risky; proxy-only biasanya score 32, evidence family lain
+dapat menaikkan skor. Uji 100 record teringest adalah integration, bukan holdout.
+[Runbook akun](AVASTEL_PRIVATE_PRODUCTION.md) dan
+[alur review label](LABEL_REVIEW_WORKFLOW.md).

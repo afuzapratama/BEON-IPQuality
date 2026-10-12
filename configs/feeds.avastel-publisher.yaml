@@ -1,0 +1,18 @@
+# Dedicated publisher input. Main daemon config uses externally_managed: true.
+feeds:
+  avastel_account:
+    enabled: true
+    name: Avastel Account
+    threat_type: proxy
+    confidence: 0.8
+    weight: 40
+    schedule: '@every 7h'
+    sources:
+      - url: http://172.18.0.1:18090/proxy-ips.txt
+        format: plain
+        name: normalized_account
+formats:
+  plain:
+    description: Validated isProxy=True account IPs
+whitelist:
+  enabled: false

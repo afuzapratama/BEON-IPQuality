@@ -4,9 +4,9 @@ BEON-IPQuality mengumpulkan feed reputasi IP ke PostgreSQL, menggabungkan sinyal
 
 ## Status deployment
 
-Hasil verifikasi 12 Oktober 2026: pilot ARM64 berjalan dengan runtime
-[`v1.1.0-rc.3`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.3)
-dan [manifest image berbasis digest](deployments/releases/v1.1.0-rc.3.env).
+Hasil verifikasi 13 Oktober 2026: API privat ARM64 berjalan dengan runtime
+[`v1.1.0-rc.4`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.4)
+dan [manifest image berbasis digest](deployments/releases/v1.1.0-rc.4.env).
 VPS memakai Docker Compose, reverse proxy Caddy yang sudah ada, updater MaxMind
 native, dan monitoring Glances tanpa aaPanel. Perubahan berada pada branch
 `fix/production-readiness`, dengan [draft PR #1](https://github.com/afuzapratama/BEON-IPQuality/pull/1).
@@ -14,18 +14,21 @@ native, dan monitoring Glances tanpa aaPanel. Perubahan berada pada branch
 | Bagian | Status pilot |
 |---|---|
 | API HTTPS | `https://ipproxy.beon-api.site/api/v1/check/8.8.8.8`, memerlukan API key |
-| Dataset | Feed terkurasi dari [konfigurasi pilot ARM 4 GB](configs/feeds.pilot.arm-4gb.yaml) |
+| Dataset | Feed terkurasi + dataset akun Avastel privat, [profil ARM 8 GB](configs/feeds.pilot.arm-8gb.yaml) |
 | Scoring | `evidence-family-max-v1`; precision/recall belum diukur pada korpus independen |
 | GeoIP | GeoLite2 City/ASN diperbarui ke direktori MMDB proyek oleh timer host |
 | Backup | Backup terenkripsi age ke Bunny S3; download, decrypt, dan restore terisolasi sudah diuji |
-| Alert | Telegram untuk health, pipeline, resource, dan backup; Glances melalui SSH tunnel |
+| Alert | Telegram native + uptime dari GitHub runner eksternal; Glances melalui SSH tunnel |
 
 Domain utama menyediakan halaman lookup IP dengan kolom API key. `/health` dan
 `/metrics` dapat diakses langsung tanpa key. Route `/api/v1/*` tersedia lewat HTTPS:
 lookup dan stats memerlukan API key; cache/reload memerlukan admin key yang berbeda.
 Kuota publik pilot 1.000 request/menit/key. Key tidak disimpan oleh halaman lookup.
 
-Phase 6 belum menutup seluruh gate produksi. Bukti pengujian, batas kapasitas,
+Dataset akun diperbarui **setiap 7 jam**, dengan refresh pemulihan setelah boot.
+[Alur produksi privat](docs/AVASTEL_PRIVATE_PRODUCTION.md) mengatur key, validasi,
+refresh atomik dan retention. Workflow uptime aktif di `main`; branch aplikasi
+belum seluruhnya di-merge. Phase 6 belum menutup seluruh gate produksi. Bukti pengujian, batas kapasitas,
 dan pekerjaan tersisa tercatat pada [laporan phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md).
 
 ## Komponen
@@ -221,8 +224,9 @@ harus tersedia untuk decrypt backup. Ikuti [panduan backup/restore/rollback](doc
 
 `beon-alert-check.timer` memeriksa health, freshness, pipeline, container,
 resource, dan umur backup setiap menit. Telegram mengirim incident setelah dua
-pemeriksaan gagal berturut-turut, recovery, serta reminder. Monitor eksternal
-masih diperlukan untuk mendeteksi VPS atau jaringan yang mati total.
+pemeriksaan gagal berturut-turut, recovery, serta reminder. Monitor eksternal GitHub Actions memeriksa HTTPS kira-kira setiap lima menit
+dan mengirim incident/recovery Telegram. Scheduler bersifat best effort; detail
+dan batas scope ada pada [validasi operasional rc4](docs/OPERATIONS_RC4_VALIDATION.md).
 
 Glances tersedia di loopback port 61208 untuk CPU, RAM, trafik jaringan, dan disk I/O:
 
@@ -251,22 +255,12 @@ di [bukti kapasitas phase 6](docs/evidence/phase6-arm-capacity-2026-10-12.json).
 
 ## Pekerjaan berikutnya
 
-1. Siapkan korpus IP berlabel independen untuk mengukur precision, recall, dan
-   false positive per kategori; evaluasi threshold dan bobot berdasarkan hasilnya.
-   [Evaluator offline dan panduan korpus](docs/SCORING_EVALUATION.md) sudah tersedia.
-   Baseline Avastel 500 IP telah dijalankan; dataset positif saja belum cukup
-   untuk mengukur precision/false positive.
-   Dataset akun 1 juta baris juga sudah diuji pada pipeline staging lokal;
-   belum diaktifkan di produksi karena ketentuan penggunaan dan headroom ARM.
-   Uji gabungan pada ARM dihentikan guard saat compiler mendekati cap 1,5 GiB;
-   Setelah upgrade 4 vCPU/8 GB, uji gabungan 1,21 juta rows berhasil pada
-   cap compiler 2,5 GiB, peak proses ~1,94 GiB. API integration staging lulus.
-   Kandidat dan dataset akun belum dipasang di produksi; scope ini belum
-   membuktikan akurasi independen atau kapasitas beban publik berkelanjutan.
-2. Uji beban HTTPS berkelanjutan dengan variasi IP, sekaligus ukur resource
-   ingest/compiler dan pertumbuhan disk pada dataset yang ditargetkan.
-3. Tambahkan uptime monitoring eksternal, lalu lakukan reboot dan full rollback/
-   recovery drill untuk mengukur RTO dan memastikan service pulih otomatis.
+1. Isi dan review [korpus label independen](docs/LABEL_REVIEW_WORKFLOW.md), lalu
+   ukur precision/recall/false positive. Sampel dari source training bukan holdout.
+2. Perluas pengujian beban HTTPS dan ukur pertumbuhan disk/history dalam beberapa
+   hari. Probe lima menit/1.500 request sudah lulus, belum kapasitas puncak atau SLO.
+3. Lakukan full disaster-recovery drill untuk RTO final. Rollback aplikasi dan
+   warm reboot sudah lulus; restore DB/MMDB terisolasi dan offsite backup valid.
 
-Gate ini diperlukan sebelum pilot dinyatakan siap produksi penuh. Checklist
-pelaksanaan tetap mengikuti [tracker phase perbaikan](docs/PHASE_PERBAIKAN_DAN_VPS_ARM.md).
+Hasil yang sudah terukur: [validasi rc4](docs/OPERATIONS_RC4_VALIDATION.md).
+Checklist pelaksanaan mengikuti [tracker phase perbaikan](docs/PHASE_PERBAIKAN_DAN_VPS_ARM.md).
