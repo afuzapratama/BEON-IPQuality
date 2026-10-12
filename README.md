@@ -246,6 +246,8 @@ di [bukti kapasitas phase 6](docs/evidence/phase6-arm-capacity-2026-10-12.json).
 1. Siapkan korpus IP berlabel independen untuk mengukur precision, recall, dan
    false positive per kategori; evaluasi threshold dan bobot berdasarkan hasilnya.
    [Evaluator offline dan panduan korpus](docs/SCORING_EVALUATION.md) sudah tersedia.
+   Baseline Avastel 500 IP telah dijalankan; dataset positif saja belum cukup
+   untuk mengukur precision/false positive.
 2. Uji beban HTTPS berkelanjutan dengan variasi IP, sekaligus ukur resource
    ingest/compiler dan pertumbuhan disk pada dataset yang ditargetkan.
 3. Tambahkan uptime monitoring eksternal, lalu lakukan reboot dan full rollback/

@@ -1,0 +1,57 @@
+{
+  "source_url": "https://raw.githubusercontent.com/antoinevastel/avastel-bot-ips-lists/784596a3d415414a8c01b088ddcf524f0118ca2d/avastel-proxy-bot-ips-1day.txt",
+  "source_revision": "784596a3d415414a8c01b088ddcf524f0118ca2d",
+  "source_commit_time": "2026-10-12T01:07:32Z",
+  "fetched_at": "2026-10-12T21:20:16.927147+00:00",
+  "source_sha256": "89c4760d511930e00f28fcf1f8ab4ccd3776827cbfdbc2e638876da9adf81836",
+  "unique_ips": 500000,
+  "source_update_header": "# Last update: 2026-10-12T01:04:43.370276Z",
+  "samples": 500,
+  "seed": 20261013,
+  "label": "provider-reported proxy positives",
+  "independence": "No direct Avastel feed configured; upstream independence not fully established",
+  "interpretation": "Positive-only agreement; not overall accuracy, precision or false-positive rate",
+  "data_version": "b3dc7c81e2f70a8cef59dcdafba151c7260e0d618fcd7d9c180f98cacaa90f09",
+  "collected_at": "2026-10-12T21:20:21.056985+00:00",
+  "proxy_detected": 0,
+  "proxy_not_detected": 500,
+  "positive_agreement": 0.0,
+  "positive_agreement_wilson95": [
+    4.336808689942018e-19,
+    0.007624340461552241
+  ],
+  "precision": null,
+  "false_positive_rate": null,
+  "ipv4": 500,
+  "ipv6": 0,
+  "category_counts": {
+    "risky": 11,
+    "vpn": 5,
+    "tor": 0,
+    "datacenter": 20,
+    "botnet": 0,
+    "whitelisted": 0
+  },
+  "feed_sources_seen": [
+    "Emerging Threats/et_block",
+    "Extended Datacenter IP Ranges/x4b_dc_v4",
+    "Extended VPN Provider IP Ranges/x4b_vpn_v4",
+    "FireHOL Level 1/level1",
+    "Spamhaus DROP/drop"
+  ],
+  "limitations": [
+    "Provider labels not independently revalidated",
+    "Positive-only corpus",
+    "One daily snapshot",
+    "Possible upstream correlation",
+    "Shared IPs and time-varying proxy activity",
+    "Confidence interval excludes label uncertainty and ASN/subnet dependence"
+  ],
+  "upstream_review": {
+    "firehol_level1": "Declared constituents: dshield, feodo, fullbogons, spamhaus_drop; no Avastel declared",
+    "firehol_level2": "Declared constituents: blocklist_de, dshield_1d, greensnow; no Avastel declared",
+    "ipsum": "Aggregates 30+ sources; transitive independence not fully established",
+    "conclusion": "External provider agreement study; not a certified independent holdout"
+  },
+  "source_age_seconds_at_fetch": 72933.556871
+}

@@ -203,3 +203,19 @@ coverage tidak lengkap atau snapshot campuran ditolak. Tiga unit tests lulus,
 termasuk denominator nol dan whitelist pada eksperimen threshold. Korpus label
 independen nyata belum tersedia; gate akurasi belum ditutup dan scoring VPS
 belum diubah dari hasil fixture.
+
+## Baseline proxy eksternal Avastel — 13 Oktober 2026
+
+Studi read-only menggunakan 500 sampel acak dari 500.000 IP provider-reported
+proxy, source dipin ke commit dan hash, hasil API satu data_version. Flag proxy
+0/500, VPN 5, datacenter 20, risky 11. Ini positive-only provider agreement;
+precision/false-positive rate dan akurasi keseluruhan tidak dapat disimpulkan.
+Independensi upstream transitif belum sepenuhnya terbukti. Raw artifacts privat
+tersimpan lokal; evidence agregat ada di
+[evidence Avastel](evidence/phase6-avastel-positive-agreement-2026-10-13.json).
+
+Avastel tetap di luar feed produksi untuk menjaga baseline. Sebelum integrasi,
+perlukan negative controls, holdout berbeda, parser semicolon dan pengukuran
+staging ingest/compiler 500k baris. Panduan lengkap pada
+[SCORING_EVALUATION.md](SCORING_EVALUATION.md). Lima unit tests evaluasi/parsing
+lulus; runtime dan scoring VPS tidak diubah oleh studi ini.
