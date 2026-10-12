@@ -252,57 +252,63 @@ type reputationAggregate struct {
 }
 
 func (c *Compiler) aggregateReputations(reputations []models.IPReputation, now time.Time) ([]mmdb.ReputationEntry, error) {
-	aggregates := make(map[string]*reputationAggregate)
-	for _, reputation := range reputations {
+	// Sort a compact index instead of retaining one aggregate and two maps for
+	// every network. Only the current prefix group needs temporary threat state.
+	// Stable sorting preserves the original tie-breaking order within each group.
+	type indexedReputation struct {
+		prefix netip.Prefix
+		key    string
+		index  int
+	}
+	indexed := make([]indexedReputation, 0, len(reputations))
+	for index, reputation := range reputations {
 		prefix, err := parseReputationPrefix(reputation.IPRange)
 		if err != nil {
 			logger.Warn(fmt.Sprintf("Skipping invalid reputation range %q: %v", reputation.IPRange, err))
 			continue
 		}
 		prefix = prefix.Masked()
-		key := prefix.String()
-		aggregate := aggregates[key]
-		if aggregate == nil {
-			aggregate = &reputationAggregate{
-				prefix:      prefix,
-				sources:     make(map[string]struct{}),
-				threatTypes: make(map[string]struct{}),
+		indexed = append(indexed, indexedReputation{prefix: prefix, key: prefix.String(), index: index})
+	}
+	sort.SliceStable(indexed, func(i, j int) bool { return indexed[i].key < indexed[j].key })
+	entries := make([]mmdb.ReputationEntry, 0, len(indexed))
+	for start := 0; start < len(indexed); {
+		end := start + 1
+		for end < len(indexed) && indexed[end].key == indexed[start].key {
+			end++
+		}
+		aggregate := &reputationAggregate{
+			prefix:      indexed[start].prefix,
+			sources:     make(map[string]struct{}),
+			threatTypes: make(map[string]struct{}),
+			threats:     make([]models.Threat, 0, end-start),
+		}
+		for _, item := range indexed[start:end] {
+			reputation := reputations[item.index]
+
+			aggregate.threats = append(aggregate.threats, models.Threat{
+				ThreatType: reputation.ThreatType,
+				Source:     reputation.Source,
+				Confidence: reputation.Confidence,
+				Weight:     reputation.Weight,
+				LastSeen:   reputation.LastSeen,
+			})
+			aggregate.sources[reputation.Source] = struct{}{}
+			aggregate.threatTypes[reputation.ThreatType] = struct{}{}
+			aggregate.flags = mergeFlags(aggregate.flags, flagsForThreatType(reputation.ThreatType))
+			primaryValue := float64(reputation.Weight) * reputation.Confidence
+			if primaryValue > aggregate.primaryValue {
+				aggregate.primaryValue = primaryValue
+				aggregate.primaryType = reputation.ThreatType
 			}
-			aggregates[key] = aggregate
+			if reputation.Confidence > aggregate.confidence {
+				aggregate.confidence = reputation.Confidence
+			}
+			if reputation.LastSeen.After(aggregate.lastUpdate) {
+				aggregate.lastUpdate = reputation.LastSeen
+			}
 		}
 
-		aggregate.threats = append(aggregate.threats, models.Threat{
-			ThreatType: reputation.ThreatType,
-			Source:     reputation.Source,
-			Confidence: reputation.Confidence,
-			Weight:     reputation.Weight,
-			LastSeen:   reputation.LastSeen,
-		})
-		aggregate.sources[reputation.Source] = struct{}{}
-		aggregate.threatTypes[reputation.ThreatType] = struct{}{}
-		aggregate.flags = mergeFlags(aggregate.flags, flagsForThreatType(reputation.ThreatType))
-		primaryValue := float64(reputation.Weight) * reputation.Confidence
-		if primaryValue > aggregate.primaryValue {
-			aggregate.primaryValue = primaryValue
-			aggregate.primaryType = reputation.ThreatType
-		}
-		if reputation.Confidence > aggregate.confidence {
-			aggregate.confidence = reputation.Confidence
-		}
-		if reputation.LastSeen.After(aggregate.lastUpdate) {
-			aggregate.lastUpdate = reputation.LastSeen
-		}
-	}
-
-	keys := make([]string, 0, len(aggregates))
-	for key := range aggregates {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	entries := make([]mmdb.ReputationEntry, 0, len(keys))
-	for _, key := range keys {
-		aggregate := aggregates[key]
 		sources := mapKeys(aggregate.sources)
 		threatTypes := mapKeys(aggregate.threatTypes)
 		asn, err := c.classifyASN(aggregate.prefix)
@@ -328,6 +334,7 @@ func (c *Compiler) aggregateReputations(reputations []models.IPReputation, now t
 			LastUpdate:    aggregate.lastUpdate,
 			ASN:           asn,
 		})
+		start = end
 	}
 	return entries, nil
 }

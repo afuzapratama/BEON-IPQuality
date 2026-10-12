@@ -227,3 +227,45 @@ ASN, serta pipeline nyata sebelum mengulang staging ARM dengan batas yang sama.
 Rekomendasi awal 4 vCPU/8 GB tetap merupakan estimasi headroom; bukan host yang
 sudah diuji atau di-upgrade. Hak penggunaan lookup turunan dataset akun dan
 korpus holdout independen tetap merupakan gate terpisah.
+
+## Optimasi aggregation dan uji ulang ARM — 13 Oktober 2026
+
+Compiler kini menormalisasi/sort stable indeks prefix, lalu memproses satu grup
+prefix pada satu waktu. Temporary aggregate/source/threat maps tidak lagi disimpan
+untuk seluruh jaringan sekaligus. Input tidak dimutasi; stable sort mempertahankan
+urutan tie primary threat, lexicographic prefix order, evidence, confidence dan flags.
+Regresi membandingkan output terhadap implementasi sebelumnya pada prefix alias,
+IPv4/IPv6, duplicate sources, invalid ranges, decay dan equal-weight ties.
+
+Microbenchmark lokal 10k prefix/3 iterasi: allocation total ~16,8 → 14,9 MB/op,
+150.086 → 140.006 allocations/op; waktu ~29,4 → 37,5 ms/op. Ini tradeoff sorting
+versus retained maps, bukan klaim peak RSS atau peningkatan throughput produksi.
+
+Binary kandidat ARM64 dipasang **hanya** pada container staging lewat bind mount;
+image/digest produksi tidak diubah. Pada clone gabungan 1.209.548 rows,
+ingest selesai 71,03 detik. Kandidat berhasil melewati aggregation dan mulai writer
+pada 1.147.296 entries, tetapi kemudian **container OOM** pada cap 1.536 MiB.
+Compiler exit 137, OOMKilled=true, ~62,82 detik. Peak proses teramati 1.627.529.216
+byte; peak cgroup teramati 1.608.556.544 byte. Counter process HWM dan cgroup memory
+berbeda cakupan; angka ini bukan pengukuran peak kebutuhan final compile sukses.
+Berbeda dari percobaan sebelumnya yang dihentikan host-pressure guard,
+percobaan kandidat ini dihentikan kernel/container OOM; guard aborted=null.
+
+[Evidence kandidat](evidence/phase6-compiler-grouped-arm-2026-10-13.json)
+memuat binary hash, limit, outcomes dan regresi. Tidak ada MMDB kandidat selesai
+terverifikasi. API pilot rc.3 tetap healthy/fresh; container/network staging sudah
+dibersihkan. Optimasi ini belum dirilis atau dipasang pada compiler produksi.
+
+### Rekomendasi upgrade untuk tahap dataset gabungan
+
+Prioritaskan **RAM 8 GB**, dengan **4 vCPU** sebagai rekomendasi headroom CPU.
+Disk VPS masih ~22 GB bebas sehingga resize disk belum menjadi syarat pengujian;
+80 GB tetap target headroom produksi untuk DB/history/backup. Pilot feed terkurasi
+saat ini tetap berjalan pada VPS 4 GB.
+
+Setelah resize RAM, sesuaikan cap compiler karena VM resize tidak otomatis
+mengubah `mem_limit` container. Batas awal 2,5 GiB untuk eksperimen compiler adalah
+estimasi engineering, bukan peak kebutuhan yang sudah terbukti. Ulangi bounded
+ARM staging, ukur writer/pipeline gabungan dan headroom keseluruhan sebelum
+menentukan limit final atau mengaktifkan source akun. Penggunaan dataset akun
+pada API dan evaluasi holdout tetap belum ditutup.

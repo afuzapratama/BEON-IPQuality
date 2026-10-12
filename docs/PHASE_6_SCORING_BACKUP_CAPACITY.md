@@ -257,3 +257,22 @@ hasil resize/benchmark. Penggunaan dataset akun untuk API masih perlu diperjelas
 [Evidence gabungan ARM](evidence/phase6-avastel-combined-arm-2026-10-13.json)
 dan [detail prosedur/keputusan](SCORING_EVALUATION.md). Sepuluh unit tests
 parser/evaluator/guard lulus; tidak ada digest runtime produksi yang diubah.
+
+## Kandidat compiler hemat retained aggregation — 13 Oktober 2026
+
+Aggregation diubah menjadi stable-sort indeks + pemrosesan per-prefix group.
+Output sama dengan reference lama; input tidak dimutasi. Go tests/vet, race pada
+compiler/MMDB/scoring, integrasi PostgreSQL/Redis race dan 10 Python tests lulus.
+Kandidat ARM dijalankan hanya di staging; produksi masih rc.3.
+
+Pada 1.209.548 rows, kandidat melewati aggregation dan memasuki writer dengan
+1.147.296 entries, lalu OOM pada cap compiler 1,5 GiB (exit 137, OOMKilled=true,
+62,82 detik). Ini OOM container yang nyata, bukan guard kill seperti run awal.
+Tidak ada MMDB kandidat selesai terverifikasi. Produksi tetap healthy/fresh;
+container/volume/network staging dibersihkan.
+
+Resource gate belum lolos. Rekomendasi untuk tahap dataset gabungan: 4 vCPU/8 GB
+RAM; disk existing masih cukup untuk pengujian, 80 GB target headroom produksi.
+Sesudah resize RAM, uji dengan cap compiler yang juga dinaikkan (awal 2,5 GiB
+merupakan estimasi, bukan limit final terbukti). Source akun tetap di luar produksi.
+Lihat [evidence kandidat](evidence/phase6-compiler-grouped-arm-2026-10-13.json).

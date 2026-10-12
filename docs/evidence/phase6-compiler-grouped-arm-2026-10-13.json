@@ -1,0 +1,88 @@
+{
+  "started_at": "2026-10-12T21:46:00.333542+00:00",
+  "architecture": "aarch64",
+  "source_sha256": "dc2b91caf2f76911a8ce640b9c2aa89967ea5e95e083d16a7ded99b0bac619a3",
+  "production_enabled": false,
+  "scope": "Combined active pilot snapshot + account proxy-positive IPs on ARM; isolated DB/network/MMDB",
+  "memory_limits": {
+    "postgres": "384MiB",
+    "ingestor": "896MiB",
+    "compiler": "1536MiB"
+  },
+  "cpu_limits": {
+    "postgres": 0.5,
+    "worker": 1.0
+  },
+  "pressure_abort_mib": 600,
+  "stages": {
+    "ingestor": {
+      "elapsed_seconds": 71.0300719429797,
+      "exit_code": 0,
+      "oom_killed": false,
+      "process_hwm_bytes_sampled": 696758272,
+      "cgroup_peak_bytes_sampled": 690176000,
+      "aborted": null
+    },
+    "compiler": {
+      "elapsed_seconds": 62.81917933101067,
+      "exit_code": 137,
+      "oom_killed": true,
+      "process_hwm_bytes_sampled": 1627529216,
+      "cgroup_peak_bytes_sampled": 1608556544,
+      "aborted": null
+    }
+  },
+  "images": {
+    "postgres": "postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+    "ingestor": "ghcr.io/afuzapratama/beon-ipquality-ingestor@sha256:a54722b984f0350d322b7cc6cf8e038246da2a90811b631be04fe16760f250b9",
+    "compiler": "ghcr.io/afuzapratama/beon-ipquality-compiler@sha256:b5857379e49182b3a3b6cc1c5443821a310f192a6cf7d15e682fb93b5c736f22",
+    "api": "ghcr.io/afuzapratama/beon-ipquality-api@sha256:e32d7fd2f8b293f58269cd54491ad652bfed6219dce4de39b49956e5c32337f2"
+  },
+  "compiler_binary_sha256": "03272ae5380b63778ceed4af523432af86382ad7bfc87df9ad3a18efe6c64d55",
+  "compiler_binary_mode": "Candidate binary mounted over release compiler; production image unchanged",
+  "baseline_active_rows": 210160,
+  "combined_active_rows": 1209548,
+  "staging_database_bytes": 596137651,
+  "completed_at": "2026-10-12T21:48:24.596270+00:00",
+  "passed": false,
+  "measurement_date_wib": "2026-10-13",
+  "candidate_source_file_sha256": "9ff2c41d1c1217860ed4203f85a6c67f9fcc972d90be3627486300ee40befb5f",
+  "observation": "Candidate completed grouping and reached writer with 1,147,296 entries; kernel/container OOM killed compiler at 1536 MiB limit; no completed candidate MMDB verified",
+  "production_postcheck": {
+    "health": "healthy",
+    "snapshot_stale": false,
+    "version": "v1.1.0-rc.3",
+    "alert_checker_result": "success"
+  },
+  "cleanup_verified": true,
+  "production_candidate_deployed": false,
+  "recommendation": {
+    "vcpus": 4,
+    "ram_gb": 8,
+    "disk_gb_target": 80,
+    "disk_upgrade_immediately_required": false,
+    "compiler_limit_after_resize_candidate": "2.5GiB; engineering starting point, must remeasure; not a proven required peak"
+  },
+  "regressions": {
+    "go_test_all": "pass",
+    "go_vet_all": "pass",
+    "race_compiler_mmdb_scoring": "pass",
+    "postgres_redis_integration_race": "pass",
+    "aggregation_reference_equality": "pass",
+    "python_tests": 10
+  },
+  "microbenchmark": {
+    "scope": "Local amd64, 10k unique prefixes, 3 iterations; allocation totals, not peak RSS",
+    "reference": {
+      "ns_op": 29409145,
+      "bytes_op": 16807949,
+      "allocs_op": 150086
+    },
+    "grouped": {
+      "ns_op": 37542828,
+      "bytes_op": 14892578,
+      "allocs_op": 140006
+    },
+    "interpretation": "Lower allocations, sorting adds CPU; insufficient to close ARM writer resource gate"
+  }
+}

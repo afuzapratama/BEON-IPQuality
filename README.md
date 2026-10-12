@@ -251,7 +251,9 @@ di [bukti kapasitas phase 6](docs/evidence/phase6-arm-capacity-2026-10-12.json).
    Dataset akun 1 juta baris juga sudah diuji pada pipeline staging lokal;
    belum diaktifkan di produksi karena ketentuan penggunaan dan headroom ARM.
    Uji gabungan pada ARM dihentikan guard saat compiler mendekati cap 1,5 GiB;
-   optimasi aggregation dan pengujian ulang menjadi prioritas berikutnya.
+   kandidat aggregation sudah diuji, tetapi writer masih OOM pada cap 1,5 GiB.
+   Untuk tahap dataset gabungan, rekomendasi RAM 8 GB/4 vCPU, lalu ukur ulang
+   dengan cap compiler yang disesuaikan. Kandidat belum dipasang di produksi.
 2. Uji beban HTTPS berkelanjutan dengan variasi IP, sekaligus ukur resource
    ingest/compiler dan pertumbuhan disk pada dataset yang ditargetkan.
 3. Tambahkan uptime monitoring eksternal, lalu lakukan reboot dan full rollback/

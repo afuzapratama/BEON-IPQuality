@@ -42,6 +42,7 @@ def main():
     p.add_argument('--root',required=True)
     p.add_argument('--source',required=True)
     p.add_argument('--sha256',required=True)
+    p.add_argument('--compiler-binary')
     args=p.parse_args()
     if platform.machine() not in ('aarch64','arm64'):
         p.error('requires ARM64')
@@ -67,6 +68,10 @@ def main():
     for role in ('postgres','ingestor','compiler','api'):
         images[role]=docker('inspect',f'beon-ipquality-{role}-1','--format','{{.Config.Image}}')
     report['images']=images
+    candidate=Path(args.compiler_binary).resolve() if args.compiler_binary else None
+    if candidate:
+        report['compiler_binary_sha256']=hashlib.sha256(candidate.read_bytes()).hexdigest()
+        report['compiler_binary_mode']='Candidate binary mounted over release compiler; production image unchanged'
     try:
         docker('network','create','--internal',network)
         gateway=json.loads(docker('network','inspect',network))[0]['IPAM']['Config'][0]['Gateway']
@@ -137,6 +142,8 @@ def main():
                      '--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp',
                      '-v',str(root/'configs')+':/app/configs:ro','-v',str(root/'mmdb')+':/app/data/mmdb']
             for k,v in env.items():command.extend(['-e',k+'='+v])
+            if role=='compiler' and candidate:
+                command.extend(['-v',str(candidate)+':/app/compiler:ro'])
             command.extend([images[role],'-config','/app/configs/config.yaml',*arguments])
             started=time.monotonic();docker(*command);active.append(name)
             pid=int(docker('inspect',name,'--format','{{.State.Pid}}'))
