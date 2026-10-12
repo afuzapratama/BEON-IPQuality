@@ -37,3 +37,32 @@ Jalankan compiler dari DB restore, periksa health/lookup/auth/whitelist/IPv6 dan
 5. Periksa health, data freshness, lookup, SSL dan metrik. Jika data lama melewati freshness, refresh pipeline sebelum menyatakan pemulihan berhasil.
 
 RPO/RTO adalah hasil drill pada data nyata, bukan janji dari script. Phase 3 menguji backup dan restore pada fixture container; restore/cutover VPS, offsite transfer dan waktu pemulihan produksi diuji pada phase 5/6.
+
+## Operasional phase 6
+
+Bunny S3 dan Telegram telah diaktifkan pada pilot. Baca
+[hasil phase 6](PHASE_6_SCORING_BACKUP_CAPACITY.md) untuk policy, retention, manifest,
+serta bukti offsite download/decrypt/isolated restore. Bundle final juga memiliki
+`operations.env` privat dan `backup.recipient` public key, keduanya masuk checksum.
+Private key age hanya berada di komputer pengguna/lokasi recovery terpisah.
+
+Pada pemulihan VPS, sesudah mendekripsi bundle:
+
+```sh
+install -d -m 0700 /etc/beon-ipquality
+install -m 0600 /private/bundle/operations.env /etc/beon-ipquality/operations.env
+install -m 0644 /private/bundle/backup.recipient /etc/beon-ipquality/backup.recipient
+# Pulihkan GeoIP.conf dan runtime.env sesuai runbook di atas.
+```
+
+Pertahankan public recipient yang cocok dengan recovery key; jangan membuat
+recipient baru pada restore jika masih menggunakan kunci pemulihan lama.
+Backup local verified minimal tujuh hari/tujuh points, offsite minimal 30 hari;
+pruning hanya berjalan setelah offsite readback terbaru sukses. Bundle incomplete
+atau belum terverifikasi tidak dihapus otomatis.
+
+API rc.3 pada pilot menggunakan MMDB langsung (REDIS_ENABLED=false) berdasarkan
+baseline; root server/env dan manifest backup menentukan konfigurasi restore,
+bukan asumsi cache selalu aktif. Metadata health menyatakan scoring policy.
+Restore-check memvalidasi data/schema; refresh feeds dan recompile wajib sebelum
+menganggap snapshot pulihan yang sudah tua siap melayani request.

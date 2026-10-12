@@ -80,7 +80,7 @@ Informasi yang diperlukan saat gate ini: IP/hostname, port SSH, username, lokasi
 - [x] Periksa Docker Engine/Compose dan reverse proxy host; gunakan Caddy existing agar tidak berebut port 80/443.
 - [x] Atur direktori deployment, permission secret, volume persisten, firewall dan akses SSH yang tetap berfungsi.
 - [x] Pasang Glances native, service systemd dan akses loopback; verifikasi CPU/RAM/network/disk I/O terbaca serta ukur overhead.
-- [ ] Tentukan tujuan backup di luar VPS dan kanal alert dengan pengguna; data ini dibutuhkan untuk melengkapi operasi produksi.
+- [x] Tentukan tujuan backup di luar VPS dan kanal alert dengan pengguna; data ini dibutuhkan untuk melengkapi operasi produksi.
 
 ## Phase 5 — Pilot deployment satu instance
 
@@ -98,8 +98,8 @@ Pilot dinyatakan berhasil berdasarkan pemeriksaan ini; layanan produksi belum di
 ## Phase 6 — Observability, kapasitas, dan penyelesaian produksi
 
 - [ ] Jalankan load-test bertahap, ukur p50/p95/p99, throughput, error rate, peak RAM compiler, disk I/O dan overhead monitoring.
-- [ ] Bandingkan dengan/tanpa Redis serta batch; pilih konfigurasi dari hasil pengukuran. Target 100k req/s tetap target hingga dibuktikan pada hardware nyata.
-- [ ] Tambahkan alert service down, disk penuh, memory pressure, feed/compile gagal dan data stale; uji notifikasi benar-benar diterima.
+- [x] Bandingkan dengan/tanpa Redis serta batch; pilih konfigurasi dari hasil pengukuran. Target 100k req/s tetap target hingga dibuktikan pada hardware nyata.
+- [x] Tambahkan alert service down, disk penuh, memory pressure, feed/compile gagal dan data stale; uji notifikasi benar-benar diterima.
 - [ ] Jika butuh histori, pilih Netdata standalone yang dibatasi resource atau Prometheus retention terbatas; Grafana/ClickHouse/Loki diaktifkan hanya jika kebutuhan dan resource mendukung.
 - [ ] Ukur waktu pemulihan dan kehilangan data dari restore drill; finalkan retention/log/resource/connection pool.
 - [ ] Tetapkan runbook insiden, penanggung jawab operasional, jadwal update/backup, dan hasil security review pada revision final.
@@ -206,3 +206,16 @@ pilot; 20 kelompok/32 source aktif. Backup akhir serta restore terisolasi lulus,
 timer backup aktif. Restart service lulus; reboot host dan rollback seluruh pipeline
 belum diuji. API rc.1 teruji membaca snapshot akhir tanpa mengganggu layanan live.
 Offsite/alert, dataset penuh, load-test dan akurasi scoring tetap phase 6.
+
+### 12 Oktober 2026 — phase 6 scoring dan operasional diterapkan
+
+[Hasil phase 6](PHASE_6_SCORING_BACKUP_CAPACITY.md): runtime rc.3 seluruh CI lulus,
+scoring family max/evidence menghilangkan sum duplikat dan ASN bonus berulang.
+Google DNS score 20 non-risky; sample C2 92 risky. Delapan tahap benchmark privat
+1/8/32 client dan batch, Redis on/off, semua zero error; pilot memilih MMDB langsung.
+Peak compiler candidate ~492 MiB. Rekomendasi awal 4 vCPU/8 GB/80 GB untuk node
+terkurasi dengan headroom; dataset penuh dan traffic besar estimasi 8 vCPU/16 GB/160 GB.
+Backup Bunny S3 terenkripsi, full readback/checksum, offsite decrypt/restore nyata,
+retention guards dan Telegram incident/recovery aktif. External host-outage monitor,
+korpus akurasi independen, sustained load, dataset besar dan reboot/full rollback
+masih gate produksi, bukan pekerjaan yang dianggap selesai.

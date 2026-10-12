@@ -1,0 +1,134 @@
+{
+  "candidate_compiler_peak_bytes": 515473408,
+  "reports": [
+    {
+      "batch": false,
+      "concurrency": 1,
+      "duration_seconds": 5.000451107,
+      "errors": 0,
+      "p50_ms": 0.421668,
+      "p95_ms": 0.60861,
+      "p99_ms": 0.877978,
+      "requests": 11114,
+      "statuses": {
+        "200": 11114
+      },
+      "success": 11114,
+      "successful_requests_per_second": 2222.59947396382,
+      "redis_enabled": true
+    },
+    {
+      "batch": false,
+      "concurrency": 8,
+      "duration_seconds": 5.00149438,
+      "errors": 0,
+      "p50_ms": 1.651985,
+      "p95_ms": 4.254974,
+      "p99_ms": 6.222152,
+      "requests": 20580,
+      "statuses": {
+        "200": 20580
+      },
+      "success": 20580,
+      "successful_requests_per_second": 4114.770193943516,
+      "redis_enabled": true
+    },
+    {
+      "batch": false,
+      "concurrency": 32,
+      "duration_seconds": 5.002254923,
+      "errors": 0,
+      "p50_ms": 5.42008,
+      "p95_ms": 14.922249,
+      "p99_ms": 21.730866,
+      "requests": 25207,
+      "statuses": {
+        "200": 25207
+      },
+      "success": 25207,
+      "successful_requests_per_second": 5039.127431131123,
+      "redis_enabled": true
+    },
+    {
+      "batch": true,
+      "concurrency": 8,
+      "duration_seconds": 5.002315355,
+      "errors": 0,
+      "p50_ms": 3.075115,
+      "p95_ms": 6.301122,
+      "p99_ms": 8.807483,
+      "requests": 11966,
+      "statuses": {
+        "200": 11966
+      },
+      "success": 11966,
+      "successful_requests_per_second": 2392.0922914305147,
+      "redis_enabled": true
+    },
+    {
+      "batch": false,
+      "concurrency": 1,
+      "duration_seconds": 5.000358108,
+      "errors": 0,
+      "p50_ms": 0.336946,
+      "p95_ms": 0.455885,
+      "p99_ms": 0.596761,
+      "requests": 14131,
+      "statuses": {
+        "200": 14131
+      },
+      "success": 14131,
+      "successful_requests_per_second": 2825.9975975304683,
+      "redis_enabled": false
+    },
+    {
+      "batch": false,
+      "concurrency": 8,
+      "duration_seconds": 5.001151676,
+      "errors": 0,
+      "p50_ms": 1.214892,
+      "p95_ms": 4.154659,
+      "p99_ms": 7.856608,
+      "requests": 24022,
+      "statuses": {
+        "200": 24022
+      },
+      "success": 24022,
+      "successful_requests_per_second": 4803.293632400522,
+      "redis_enabled": false
+    },
+    {
+      "batch": false,
+      "concurrency": 32,
+      "duration_seconds": 5.007240718,
+      "errors": 0,
+      "p50_ms": 3.980437,
+      "p95_ms": 12.032475,
+      "p99_ms": 17.714979,
+      "requests": 32816,
+      "statuses": {
+        "200": 32816
+      },
+      "success": 32816,
+      "successful_requests_per_second": 6553.709287838556,
+      "redis_enabled": false
+    },
+    {
+      "batch": true,
+      "concurrency": 8,
+      "duration_seconds": 5.001246739,
+      "errors": 0,
+      "p50_ms": 1.482516,
+      "p95_ms": 4.652914,
+      "p99_ms": 7.127994,
+      "requests": 20977,
+      "statuses": {
+        "200": 20977
+      },
+      "success": 20977,
+      "successful_requests_per_second": 4194.354147021019,
+      "redis_enabled": false
+    }
+  ],
+  "caveat": "Co-located load generator on 2-vCPU VPS, 5s stages, loopback isolated API and curated dataset; not sustained or public throughput ceiling."
+}
