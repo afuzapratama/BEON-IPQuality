@@ -117,3 +117,66 @@ observasi proxy berasal dari sistem deteksinya sendiri dan IP dapat dipakai bers
    removal pada refresh agar IP lama tidak terus dianggap proxy.
 
 Avastel belum dimasukkan ke feed produksi. Gate akurasi tetap terbuka.
+
+## Dataset akun Avastel: staging privat — 13 Oktober 2026
+
+Key dari file operator dipakai hanya untuk download ZIP CSV pada endpoint akun.
+Source akun berbeda ketentuannya dari repository GitHub MIT. Paket Free resmi
+menyatakan tidak termasuk hak redistribusi. Dataset akun tidak masuk API produksi;
+penggunaan lookup turunan harus dipastikan diperbolehkan sebelum aktivasi.
+[Ketentuan paket resmi](https://deviceandbrowserinfo.com/product/proxies-ips).
+
+Alat `scripts/stage-avastel-account.py` membaca token/file assignment tanpa
+mengeksekusinya, menolak redirect, membatasi ZIP 128 MiB dan CSV 512 MiB,
+memvalidasi header/IP/flag, serta menormalisasi **hanya isProxy=True**.
+Error tidak mencetak URL berkredensial. Arsip tidak diekstrak ke path dari ZIP.
+Dedup memakai SQLite dengan cache 8 MiB; cache ini bukan batas total RAM Python.
+Seluruh hasil bersifat privat, tanpa raw data atau API key di repository.
+
+```bash
+python3 scripts/stage-avastel-account.py \
+  --key-file /private/ipavastel.txt --output /private/avastel-account-stage-new
+
+mkdir -p /private/avastel-account-stage-new/bin
+go build -o /private/avastel-account-stage-new/bin/ ./cmd/ingestor ./cmd/compiler ./cmd/api
+python3 scripts/stage-avastel-pipeline.py \
+  --dataset-dir /private/avastel-account-stage-new
+```
+
+Pipeline membutuhkan Linux, Docker, `psql`, dan Go sesuai `go.mod`. PostgreSQL
+sementara dibatasi 1 GiB dan bind ke loopback port acak. Worker menggunakan feed
+normalized sementara; API serta HTTP source staging juga hanya bind loopback.
+Container/volume sementara dan server dibersihkan setelah selesai/gagal. Database
+produksi tidak dipakai. Hasil MMDB/log privat dipertahankan untuk audit.
+
+### Hasil nyata
+
+- Download: 22.648.205 byte ZIP, 87.507.971 byte CSV, tepat 1.000.000 baris IP valid.
+- `isProxy=True`: 999.388 baris; `isProxy=False`: 612 baris yang dikecualikan dari
+  feed proxy. Semua flag divalidasi, tidak diganti berdasarkan nama dataset.
+- CSV mencakup ASN, network ASN, negara, isDataCenter, isProxy dan proxyType;
+  tahap ini hanya memasukkan IP/label proxy, tidak mengganti klasifikasi ASN/GeoIP
+  produksi memakai metadata provider.
+- Native Go ingestor: 26,23 detik, peak RSS 630.264 KiB (~616 MiB).
+- Native Go compiler: 25,37 detik, peak RSS 1.513.436 KiB (~1.443 GiB).
+- PostgreSQL: 999.388 active rows, ukuran database 391.607.987 byte (~373 MiB).
+- MMDB: 51.384.657 byte (~49 MiB), offline verification lulus.
+- Lookup API staging 100 sampel yang sudah diingest: proxy=true 100/100,
+  score=32, risky=false seluruhnya, satu data_version dan health healthy.
+  Ini verifikasi integrasi pada data sendiri, **bukan angka akurasi independen**.
+  Bobot 40/confidence 0,8 hanya konfigurasi eksperimen staging.
+
+[Evidence agregat](evidence/phase6-avastel-account-staging-2026-10-13.json) merekam
+hash, kolom, jumlah data, versi MMDB dan resource. Raw artifacts ada di
+`/home/natama/Documents/beon-backups/avastel-account-stage-20261013` (privat).
+
+Pengukuran dilakukan pada mesin lokal **x86_64**, source Avastel saja, tanpa
+GeoLite2, tanpa pilot feeds, dan tanpa load produksi. Peak worker bukan peak RAM
+seluruh stack. GOMEMLIMIT 700/1100 MiB dan GOGC=50 merupakan target Go, bukan cap
+RSS. Hasil ini tidak membuktikan dataset gabungan aman pada VPS ARM 4 GB.
+
+Compiler source tunggal sudah dekat dengan cap compiler VPS 1,5 GiB. Sebelum
+produksi, lakukan pengujian dataset gabungan pada ARM dengan cap nyata, cek
+retention/refresh/removal source, kemudian tentukan optimasi atau upgrade resource.
+Korpus negatif independen dan holdout berbeda tetap diperlukan untuk evaluasi
+akurasi sesudah integrasi. Tidak ada timer akun atau ingest produksi yang diaktifkan.

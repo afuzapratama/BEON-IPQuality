@@ -219,3 +219,23 @@ perlukan negative controls, holdout berbeda, parser semicolon dan pengukuran
 staging ingest/compiler 500k baris. Panduan lengkap pada
 [SCORING_EVALUATION.md](SCORING_EVALUATION.md). Lima unit tests evaluasi/parsing
 lulus; runtime dan scoring VPS tidak diubah oleh studi ini.
+
+## Staging dataset akun Avastel — 13 Oktober 2026
+
+Key akun dari file privat digunakan untuk download ZIP CSV, tanpa dicetak atau
+masuk repository. Dataset 1.000.000 baris valid; 999.388 isProxy=True dinormalisasi,
+612 isProxy=False dikecualikan. Go ingestor/compiler berhasil pada PostgreSQL
+sementara lokal: ingest 26,23 detik/~616 MiB peak; compiler 25,37 detik/~1,44 GiB
+peak; MMDB ~49 MiB terverifikasi. API staging 100/100 record teringest memberi
+proxy=true, score 32, risky=false; ini self-check integrasi, bukan accuracy.
+
+Pengukuran x86_64, source tunggal tanpa GeoLite2/pilot feeds; tidak membuktikan
+kapasitas ARM atau dataset gabungan. Peak compiler sudah dekat cap VPS 1,5 GiB.
+Dataset akun tetap privat staging: Free plan tidak mencakup redistribusi,
+penggunaan lookup turunan perlu dipastikan. Source Github MIT tetap terpisah.
+Tidak ada konfigurasi API produksi atau timer akun yang diubah.
+
+Delapan unit tests evaluator/parser lulus. Raw artifacts privat dipertahankan,
+container PostgreSQL/volume staging dan server loopback sudah dibersihkan.
+Lihat [panduan](SCORING_EVALUATION.md) dan
+[evidence agregat](evidence/phase6-avastel-account-staging-2026-10-13.json).

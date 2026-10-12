@@ -1,0 +1,92 @@
+{
+  "download_normalization": {
+    "endpoint": "https://deviceandbrowserinfo.com/proxy-api/api/ips/db/free-trial/csv.zip",
+    "fetched_at": "2026-10-12T21:27:30.396522+00:00",
+    "zip_sha256": "022764d7db0a50e31f13e3cc89e319d38ffc706f59e23e35110e645bf483d61a",
+    "zip_bytes": 22648205,
+    "normalized_sha256": "dc2b91caf2f76911a8ce640b9c2aa89967ea5e95e083d16a7ded99b0bac619a3",
+    "download_seconds": 3.174549961993762,
+    "normalization_seconds": 9.980596954999783,
+    "peak_rss_kib": 433652,
+    "measurement_scope": "Local downloader + SQLite bounded-cache dedup; not Go ingest/compiler or ARM benchmark",
+    "production_enabled": false,
+    "redistribution_authorized": false,
+    "csv_bytes": 87507971,
+    "csv_columns": [
+      "ip",
+      "asn.asn",
+      "asn.name",
+      "asn.network",
+      "geo.countryCode",
+      "isDataCenter",
+      "isProxy",
+      "proxyType"
+    ],
+    "delimiter": ",",
+    "parsed_rows": 1000000,
+    "unique_ips": 999388,
+    "duplicates": 0,
+    "invalid_rows": 0,
+    "proxy_rows": 999388,
+    "excluded_nonproxy_rows": 612,
+    "normalization_policy": "Include only isProxy=True; false records excluded; metadata retained in private ZIP"
+  },
+  "pipeline": {
+    "ingestor": {
+      "elapsed_seconds": 26.22650889599754,
+      "peak_rss_kib": 630264,
+      "exit_code": 0
+    },
+    "compiler": {
+      "elapsed_seconds": 25.37462355900061,
+      "peak_rss_kib": 1513436,
+      "exit_code": 0
+    },
+    "verification": {
+      "reputation": {
+        "binary_format": 2,
+        "build_epoch": 1791840637,
+        "database_type": "BEON-IPReputation",
+        "ip_version": 6,
+        "node_count": 7340550,
+        "record_size": 28
+      },
+      "version": "79c41ef91f850ae75570e94a5d47448e3ae6caabc3a3ee5765c2ee4065148166"
+    },
+    "database": {
+      "active_rows": 999388,
+      "total_rows": 999388
+    },
+    "database_bytes": 391607987,
+    "architecture": "x86_64",
+    "dataset_unique_ips": 999388,
+    "mmdb_bytes": 51384657,
+    "source_zip_sha256": "022764d7db0a50e31f13e3cc89e319d38ffc706f59e23e35110e645bf483d61a",
+    "measurement_scope": "Local isolated normalized source only; no live pilot feeds, no GeoLite2; not ARM production capacity",
+    "production_enabled": false,
+    "redistribution_authorized": false,
+    "api_smoke": {
+      "samples": 100,
+      "proxy_true": 100,
+      "scores": [
+        32
+      ],
+      "risky_true": 0,
+      "data_versions": [
+        "79c41ef91f850ae75570e94a5d47448e3ae6caabc3a3ee5765c2ee4065148166"
+      ],
+      "health_status": "healthy",
+      "interpretation": "Integration self-check on ingested records; not independent accuracy"
+    }
+  },
+  "source_reference": "https://deviceandbrowserinfo.com/product/proxies-ips",
+  "decision": "Account dataset remains private staging; production blocked pending permitted derived API use and combined ARM resource test",
+  "tested_source_revision": "7ee6725",
+  "configuration": {
+    "ingestor_gomemlimit": "700MiB",
+    "compiler_gomemlimit": "1100MiB",
+    "gogc": 50,
+    "postgres_memory_limit": "1GiB",
+    "note": "GOMEMLIMIT is a soft Go heap target, not a process/container hard cap; worker peaks exclude PostgreSQL and downloader"
+  }
+}
