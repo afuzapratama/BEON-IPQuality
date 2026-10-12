@@ -1,0 +1,77 @@
+name: External uptime
+on:
+  schedule:
+    - cron: '3-58/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        type: choice
+        default: none
+        options: [none, fail, healthy]
+permissions:
+  contents: write
+concurrency:
+  group: external-uptime
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check HTTPS and notify Telegram
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TG_TOKEN: ${{ secrets.BEON_UPTIME_TELEGRAM_TOKEN }}
+          TG_CHAT: ${{ secrets.BEON_UPTIME_TELEGRAM_CHAT }}
+          TG_THREAD: ${{ secrets.BEON_UPTIME_TELEGRAM_THREAD }}
+          TEST_MODE: ${{ inputs.test_mode || 'none' }}
+        run: |
+          python3 - <<'PYTHON'
+          import base64,json,os,time,urllib.request,urllib.error
+          repo=os.environ['REPO'];branch='monitoring-state';mode=os.environ.get('TEST_MODE','none')
+          name='state.json' if mode=='none' else 'state-test.json'
+          token=os.environ['GH_TOKEN']
+          def gh(path,data=None,method=None):
+           req=urllib.request.Request('https://api.github.com/repos/'+repo+'/'+path,data=json.dumps(data).encode() if data else None,method=method,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'})
+           with urllib.request.urlopen(req,timeout=20) as r:return json.load(r)
+          try:gh('git/ref/heads/'+branch)
+          except urllib.error.HTTPError as e:
+           if e.code!=404:raise
+           sha=gh('git/ref/heads/main')['object']['sha'];gh('git/refs',{'ref':'refs/heads/'+branch,'sha':sha})
+          state={'failures':0,'incident':False,'last_alert':0};file_sha=None
+          try:
+           stored=gh('contents/'+name+'?ref='+branch);file_sha=stored['sha'];state=json.loads(base64.b64decode(stored['content']))
+          except urllib.error.HTTPError as e:
+           if e.code!=404:raise
+          healthy=False
+          try:
+           with urllib.request.urlopen('https://ipproxy.beon-api.site/health',timeout=15) as r:
+            health=json.load(r);healthy=health.get('status')=='healthy' and not health.get('snapshot',{}).get('stale',True)
+          except Exception:pass
+          if mode!='none':healthy=mode=='healthy'
+          now=time.time();message=None
+          if healthy:
+           if state['incident']:message='RECOVERY: ipproxy.beon-api.site healthy again (external monitor).'
+           state['failures']=0;state['incident']=False
+          else:
+           state['failures']+=1
+           if mode=='fail':state['failures']=max(2,state['failures'])
+           if state['failures']>=2 and (not state['incident'] or now-state['last_alert']>6*3600):
+            message='INCIDENT: ipproxy.beon-api.site unreachable or unhealthy (external monitor).';state['incident']=True
+          if message:
+           if mode!='none':message='[TEST] '+message
+           payload={'chat_id':os.environ['TG_CHAT'],'text':message}
+           if os.environ.get('TG_THREAD'):payload['message_thread_id']=os.environ['TG_THREAD']
+           req=urllib.request.Request('https://api.telegram.org/bot'+os.environ['TG_TOKEN']+'/sendMessage',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+           try:
+            with urllib.request.urlopen(req,timeout=15) as r:
+             if not json.load(r).get('ok'):raise RuntimeError('Telegram acknowledgement missing')
+           except Exception:raise RuntimeError('Telegram delivery failed; secrets redacted') from None
+           state['last_alert']=now
+          state['checked_at']=now;state['healthy']=healthy
+          payload={'message':'Update external monitor state','content':base64.b64encode(json.dumps(state).encode()).decode(),'branch':branch}
+          if file_sha:payload['sha']=file_sha
+          gh('contents/'+name,payload,'PUT')
+          print(json.dumps({'healthy':healthy,'failures':state['failures'],'incident':state['incident'],'test_mode':mode,'notification_sent':bool(message)}))
+          PYTHON
