@@ -76,7 +76,7 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 Informasi yang diperlukan saat gate ini: IP/hostname, port SSH, username, lokasi file SSH private key yang bisa dipakai di environment kerja, status sudo, OS/versi, vCPU/RAM/disk, layanan yang sudah berjalan, serta domain API bila tersedia. Kunci privat tidak dicantumkan dalam docs/commit/log.
 
 - [x] Periksa host identity, arsitektur nyata (`aarch64`/ARM64), OS, resource, ruang disk, port dan service yang sudah ada; ARM32 memerlukan penyesuaian paket/build.
-- [ ] Tentukan apakah database/pipeline penuh muat pada VPS dari kebutuhan peak RAM compiler, bukan hanya RAM API idle.
+- [x] Ukur kebutuhan pipeline pilot: peak ingestor ~63 MiB, compiler ~305 MiB; feed jutaan baris belum muat dan tetap dinonaktifkan. Dataset penuh tetap gate phase 6.
 - [x] Periksa Docker Engine/Compose dan reverse proxy host; gunakan Caddy existing agar tidak berebut port 80/443.
 - [x] Atur direktori deployment, permission secret, volume persisten, firewall dan akses SSH yang tetap berfungsi.
 - [x] Pasang Glances native, service systemd dan akses loopback; verifikasi CPU/RAM/network/disk I/O terbaca serta ukur overhead.
@@ -84,11 +84,11 @@ Informasi yang diperlukan saat gate ini: IP/hostname, port SSH, username, lokasi
 
 ## Phase 5 — Pilot deployment satu instance
 
-- [ ] Tarik revision/image ARM64 yang sudah lolos CI; simpan manifest deployment berisi versi/digest.
-- [ ] Bootstrap PostgreSQL, ingest feed nyata, compile dan validasi MMDB, lalu API. Catat feed gagal/jumlah data/durasi tanpa menganggap angka historis masih berlaku.
-- [ ] Aktifkan GeoLite2 hanya jika kredensial MaxMind tersedia; Judge tetap dinonaktifkan kecuali diperlukan.
-- [ ] Uji health, auth benar/salah, single/batch IPv4/IPv6, whitelist, reload, cache fallback dan data freshness.
-- [ ] Sambungkan domain/HTTPS; uji route admin/metrics/Judge tetap internal dan limiter melalui Nginx.
+- [x] Tarik revision/image ARM64 yang sudah lolos CI; simpan manifest deployment berisi versi/digest.
+- [x] Bootstrap PostgreSQL, ingest feed nyata, compile dan validasi MMDB, lalu API. Catat feed gagal/jumlah data/durasi tanpa menganggap angka historis masih berlaku.
+- [x] Aktifkan GeoLite2 hanya jika kredensial MaxMind tersedia; Judge tetap dinonaktifkan kecuali diperlukan.
+- [x] Uji health, auth benar/salah, single/batch IPv4/IPv6, whitelist, reload, cache fallback dan data freshness.
+- [x] Sambungkan domain/HTTPS; uji route admin/metrics/Judge tetap internal dan limiter melalui Nginx.
 - [ ] Uji restart/reboot, scheduler tanpa duplikasi, log rotation dan volume tetap tersedia.
 - [ ] Jalankan backup pertama, restore pada target terisolasi, serta simulasi rollback revision/snapshot; dokumentasikan hasil dan batas rollback schema.
 - [ ] Simpan baseline CPU/RAM/network/disk I/O dari Glances selama ingest/compile/lookup.
@@ -196,3 +196,13 @@ Paket phase 3 siap untuk pilot, bukan bukti produksi telah berjalan. Main/draft 
 ### 12 Oktober 2026 — VPS ARM dan temuan pilot
 
 Lihat [catatan pilot](VPS_ARM_PILOT_2026-10-12.md). Akses host, Docker, direktori, reverse proxy existing, Glances loopback dan GeoLite2 native/timer telah diperiksa atau dipasang. Feed FireHOL Anonymous membutuhkan perbaikan bounded-memory sebelum diaktifkan pada host 4 GB; eDROP/SSL blacklist kosong dikecualikan dari pilot. Ingest 22 kelompok feed berhasil. Compiler reserved-network diperbaiki dan mendapat uji regresi; deployment release baru serta gate API/backup masih berjalan.
+
+### 12 Oktober 2026 — pilot aktif
+
+Release v1.1.0-rc.2 dan seluruh CI sukses; domain HTTPS berjalan, native GeoIP
+timer dan monitoring aktif, API health/auth/single/batch/whitelist/reload/cache
+fallback/limiter teruji. Duplikasi URL datacenter/VPN dibersihkan pada konfigurasi
+pilot; 20 kelompok/32 source aktif. Backup akhir serta restore terisolasi lulus,
+timer backup aktif. Restart service lulus; reboot host dan rollback seluruh pipeline
+belum diuji. API rc.1 teruji membaca snapshot akhir tanpa mengganggu layanan live.
+Offsite/alert, dataset penuh, load-test dan akurasi scoring tetap phase 6.

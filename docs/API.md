@@ -34,6 +34,8 @@ curl -X POST -H "X-API-Key: ${API_KEY}" -H 'Content-Type: application/json' \
   -d '{"ips":["8.8.8.8","1.1.1.1"]}' https://ipq.example.com/api/v1/check/batch
 ```
 
+Alamat private/loopback dan alamat yang tidak cocok untuk reputation check ditolak dengan 400 pada lookup single. Whitelist diuji melalui alamat publik yang valid.
+
 Batas default 100 IP, sesuai `api.batch_max_size`. Input kosong, JSON salah, atau melebihi batas menghasilkan 400. Urutan hasil mengikuti input. Item invalid memakai `score: -1`, `risk_level: error` atau `invalid`; `risk_score` pada item tersebut tetap default 0 dan bukan alias skor yang dapat dipakai untuk keputusan. Jika lookup IP valid gagal karena reputasi unavailable/stale, seluruh batch mengembalikan 503. Batch diproses berurutan.
 
 ## Health, statistik, dan administrasi

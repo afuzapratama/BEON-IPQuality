@@ -97,3 +97,25 @@ Satu source dipublikasi dalam transaksi COPY/upsert/expiry. IP yang hilang dari 
 TTL aktif adalah dua kali freshness budget source saat fetch berhasil; ini lebih longgar daripada health freshness agar data tidak berubah menjadi clean hanya karena fetch gagal. Freshness health tetap satu interval jadwal + configured compile/reload/retry budget. Record expired tidak masuk compiler. Data expired disimpan 30 hari untuk audit, lalu dihapus. Fetch history 30 hari, dengan latest attempt dan latest success per source tetap disimpan. Cleanup harian pada ingestor; PostgreSQL autovacuum menangani ruang mati. Penghapusan source dari konfigurasi tidak me-refresh data tersebut; row-nya habis melalui TTL.
 
 Transaksi mencegah publication parsial. Akurasi parser, perubahan sumber, volume data dan waktu copy/compile nyata tetap perlu validasi pilot/load test. Snapshot MMDB lama tetap disimpan saat compile/reload gagal; lookup menolak source/snapshot yang melewati freshness.
+
+## Pilot ARM 4 GB yang telah diuji
+
+Lihat [hasil pilot 12 Oktober 2026](VPS_ARM_PILOT_2026-10-12.md) dan manifest
+`deployments/releases/v1.1.0-rc.2.env`. Untuk fresh deployment host setara,
+salin `configs/feeds.pilot.arm-4gb.yaml` ke konfigurasi aktif `configs/feeds.yaml`
+sebelum bootstrap. Template mengecualikan FireHOL Anonymous (OOM), source kosong,
+dan URL datacenter/VPN duplikat. Menonaktifkan feed pada DB existing tidak otomatis
+mengexpire row; lakukan perubahan terencana dengan backup dan expiry/filter.
+
+Host pilot memakai Caddy existing, bukan Nginx. Tambahkan virtual host dari
+`configs/caddy/beon-production.caddyfile`, pertahankan blok domain existing,
+validasi konfigurasi dan gunakan SIGUSR1 apabila admin API disabled. Bila file bind
+mount menunjuk inode lama, recreate hanya service proxy dengan volume sertifikat
+tetap dipertahankan. Pasang Nginx hanya bila belum ada reverse proxy host.
+
+Glances distro Ubuntu 26.04 tidak menyertakan asset web; pilot memakai venv
+`/opt/beon-monitor` dengan `glances[web]==4.5.8`, dependensi aktual dikunci di
+`/opt/beon-monitor/requirements.lock`. Service `configs/systemd/beon-glances.service`
+memakai user `glances` dan loopback 61208; akses melalui SSH tunnel.
+Template `beon-backup.service`/timer membuat bundle privat setiap hari; enable
+setelah backup/restore pertama berhasil. Retention/offsite/alert tetap harus diselesaikan.
