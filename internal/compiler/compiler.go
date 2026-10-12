@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
@@ -109,6 +110,16 @@ func (c *Compiler) Compile(ctx context.Context) (compileErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Serialize daemon and host-triggered compilation across processes so two
+	// multi-gigabyte writers cannot run concurrently on the same deployment.
+	guard, err := pgx.Connect(ctx, c.config.Database.Postgres.DSN())
+	if err != nil {
+		return fmt.Errorf("open compiler lock connection: %w", err)
+	}
+	defer guard.Close(context.Background())
+	if _, err := guard.Exec(ctx, "SELECT pg_advisory_lock(741852964)"); err != nil {
+		return fmt.Errorf("acquire compiler lock: %w", err)
+	}
 	logger.Info("Starting MMDB compilation...")
 	startTime := time.Now()
 

@@ -93,3 +93,15 @@ func TestAdminAndProxyEnvironment(t *testing.T) {
 		t.Fatal("must reject trusting all peers")
 	}
 }
+
+func TestExternalPublisherFeedsRemainVisibleToCompiler(t *testing.T) {
+	feeds := &FeedsConfig{Feeds: map[string]FeedConfig{
+		"regular": {Enabled: true}, "account": {Enabled: true, ExternallyManaged: true}, "disabled": {Enabled: false},
+	}}
+	if len(feeds.GetEnabledFeeds()) != 2 || len(feeds.GetIngestibleFeeds()) != 1 {
+		t.Fatal("external feed visibility is incorrect")
+	}
+	if _, ok := feeds.GetEnabledFeeds()["account"]; !ok {
+		t.Fatal("compiler lost external source")
+	}
+}

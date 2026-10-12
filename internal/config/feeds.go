@@ -18,14 +18,15 @@ type FeedsConfig struct {
 
 // FeedConfig holds configuration for a single feed
 type FeedConfig struct {
-	Enabled     bool           `mapstructure:"enabled"`
-	Name        string         `mapstructure:"name"`
-	Description string         `mapstructure:"description"`
-	ThreatType  string         `mapstructure:"threat_type"`
-	Confidence  float64        `mapstructure:"confidence"`
-	Weight      int            `mapstructure:"weight"`
-	Schedule    string         `mapstructure:"schedule"`
-	Sources     []SourceConfig `mapstructure:"sources"`
+	ExternallyManaged bool           `mapstructure:"externally_managed"`
+	Enabled           bool           `mapstructure:"enabled"`
+	Name              string         `mapstructure:"name"`
+	Description       string         `mapstructure:"description"`
+	ThreatType        string         `mapstructure:"threat_type"`
+	Confidence        float64        `mapstructure:"confidence"`
+	Weight            int            `mapstructure:"weight"`
+	Schedule          string         `mapstructure:"schedule"`
+	Sources           []SourceConfig `mapstructure:"sources"`
 }
 
 // SourceConfig holds configuration for a feed source
@@ -118,6 +119,18 @@ func (fc *FeedsConfig) GetEnabledFeeds() map[string]FeedConfig {
 		}
 	}
 	return enabled
+}
+
+// GetIngestibleFeeds excludes feeds refreshed by a dedicated host publisher.
+// Compiler visibility and freshness still use GetEnabledFeeds.
+func (fc *FeedsConfig) GetIngestibleFeeds() map[string]FeedConfig {
+	feeds := fc.GetEnabledFeeds()
+	for name, feed := range feeds {
+		if feed.ExternallyManaged {
+			delete(feeds, name)
+		}
+	}
+	return feeds
 }
 
 // GetFeedByName returns a specific feed by name

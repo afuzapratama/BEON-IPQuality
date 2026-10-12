@@ -1,0 +1,15 @@
+[Unit]
+Description=Private normalized Avastel source on Docker bridge
+After=docker.service
+Requires=docker.service
+[Service]
+Environment=PROJECT_ROOT=/opt/beon-ipquality
+Environment=AVASTEL_SOURCE_HOST=172.18.0.1
+ExecStart=/usr/bin/python3 /opt/beon-ipquality/scripts/avastel-sync.py serve
+Restart=on-failure
+RestartSec=10
+UMask=0077
+MemoryMax=128M
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh account feed every seven hours
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=7h
+AccuracySec=1min
+Unit=beon-avastel-update.service
+[Install]
+WantedBy=timers.target

@@ -20,10 +20,12 @@ beon_ops_config="${OPS_CONFIG_FILE:-/etc/beon-ipquality/operations.env}"
 beon_backup_recipient="${BACKUP_RECIPIENT_FILE:-/etc/beon-ipquality/backup.recipient}"
 if [[ -f "$beon_ops_config" ]]; then cp "$beon_ops_config" "$beon_backup/operations.env"; fi
 if [[ -f "$beon_backup_recipient" ]]; then cp "$beon_backup_recipient" "$beon_backup/backup.recipient"; fi
+beon_avastel_key="${AVASTEL_KEY_FILE:-/etc/beon-ipquality/avastel.key}"
+if [[ -f "$beon_avastel_key" ]]; then cp "$beon_avastel_key" "$beon_backup/avastel.key"; fi
 (
   cd "$beon_backup"
   sha256sum postgres.dump runtime.env deployment-lock.env config.tar.gz mmdb.tar.gz > SHA256SUMS
-  for beon_private_file in GeoIP.conf operations.env backup.recipient; do
+  for beon_private_file in GeoIP.conf operations.env backup.recipient avastel.key; do
     if [[ -f "$beon_private_file" ]]; then sha256sum "$beon_private_file" >> SHA256SUMS; fi
   done
 )

@@ -69,7 +69,7 @@ func (i *Ingestor) Start(ctx context.Context) error {
 	i.mu.Unlock()
 
 	// Schedule feeds
-	enabledFeeds := i.feedsConfig.GetEnabledFeeds()
+	enabledFeeds := i.feedsConfig.GetIngestibleFeeds()
 	for name, feed := range enabledFeeds {
 		feedName := name
 		feedConfig := feed
@@ -135,7 +135,7 @@ func (i *Ingestor) Stop() {
 
 // RunOnce runs all feeds once and returns statistics (for --once mode)
 func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, totalStored int, err error) {
-	enabledFeeds := i.feedsConfig.GetEnabledFeeds()
+	enabledFeeds := i.feedsConfig.GetIngestibleFeeds()
 	totalFeeds = len(enabledFeeds)
 
 	// Results tracking with mutex for thread safety
@@ -178,7 +178,7 @@ func (i *Ingestor) RunOnce(ctx context.Context) (totalFeeds, totalEntries, total
 
 // runAllFeeds runs all enabled feeds
 func (i *Ingestor) runAllFeeds(ctx context.Context) {
-	enabledFeeds := i.feedsConfig.GetEnabledFeeds()
+	enabledFeeds := i.feedsConfig.GetIngestibleFeeds()
 
 	// Use semaphore for concurrency control
 	sem := make(chan struct{}, i.config.Ingestor.Concurrency)
