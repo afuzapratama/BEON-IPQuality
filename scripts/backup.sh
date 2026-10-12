@@ -16,10 +16,16 @@ for beon_optional in GeoLite2-City.mmdb GeoLite2-ASN.mmdb; do
 done
 tar -C "$beon_mmdb_dir" -czf "$beon_backup/mmdb.tar.gz" "${beon_mmdb_files[@]}"
 if [[ -n "${GEOIP_CONFIG_FILE:-}" ]]; then cp "$GEOIP_CONFIG_FILE" "$beon_backup/GeoIP.conf"; fi
+beon_ops_config="${OPS_CONFIG_FILE:-/etc/beon-ipquality/operations.env}"
+beon_backup_recipient="${BACKUP_RECIPIENT_FILE:-/etc/beon-ipquality/backup.recipient}"
+if [[ -f "$beon_ops_config" ]]; then cp "$beon_ops_config" "$beon_backup/operations.env"; fi
+if [[ -f "$beon_backup_recipient" ]]; then cp "$beon_backup_recipient" "$beon_backup/backup.recipient"; fi
 (
   cd "$beon_backup"
   sha256sum postgres.dump runtime.env deployment-lock.env config.tar.gz mmdb.tar.gz > SHA256SUMS
-  if [[ -f GeoIP.conf ]]; then sha256sum GeoIP.conf >> SHA256SUMS; fi
+  for beon_private_file in GeoIP.conf operations.env backup.recipient; do
+    if [[ -f "$beon_private_file" ]]; then sha256sum "$beon_private_file" >> SHA256SUMS; fi
+  done
 )
 # A marker distinguishes finished bundles from interrupted backups.
 printf '%s\n' 'complete' > "$beon_backup/COMPLETE"
