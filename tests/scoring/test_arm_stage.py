@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('arm_stage',Path(__file__).resolve().parents[2]/'scripts/stage-avastel-arm.py')
 arm_stage=importlib.util.module_from_spec(spec);spec.loader.exec_module(arm_stage)
@@ -12,6 +13,14 @@ class ArmStageTest(unittest.TestCase):
         self.assertIsNone(arm_stage.abort_reason(600*mib,300))
         self.assertEqual(arm_stage.abort_reason(599*mib,10),'host memory below 600 MiB')
         self.assertEqual(arm_stage.abort_reason(800*mib,301),'worker timeout exceeded 300 seconds')
+
+    def test_missing_scratch_mount_rejects_fallback(self):
+        with patch("os.path.ismount", return_value=False):
+            with self.assertRaises(ValueError):
+                arm_stage.validate_scratch_root(Path("/mnt/beon-scratch/staging/run"))
+            arm_stage.validate_scratch_root(Path("/var/lib/beon-ipquality/staging/run"))
+        with patch("os.path.ismount", return_value=True):
+            arm_stage.validate_scratch_root(Path("/mnt/beon-scratch/staging/run"))
 
     def test_account_signal_remains_proxy_context(self):
         feed=arm_stage.source_config('http://isolated/proxy-ips.txt')

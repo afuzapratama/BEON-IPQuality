@@ -32,6 +32,12 @@ def abort_reason(memory_available, elapsed):
     return None
 
 
+def validate_scratch_root(root):
+    scratch = Path("/mnt/beon-scratch")
+    if root.is_relative_to(scratch) and not os.path.ismount(scratch):
+        raise ValueError("scratch disk is not mounted; refusing root-disk fallback")
+
+
 def source_config(url):
     return dict(enabled=True, name='Avastel Account Staging Only', threat_type='proxy', confidence=0.8,
                 weight=40, schedule='0 */6 * * *', sources=[dict(url=url,format='plain',name='normalized_account')])
@@ -50,6 +56,7 @@ def main():
         p.error('requires at least 2000 MiB available memory before staging')
     os.umask(0o077)
     root=Path(args.root).resolve()
+    validate_scratch_root(root)
     root.mkdir(mode=0o700,parents=True,exist_ok=False)
     production=Path('/opt/beon-ipquality')
     source=Path(args.source).resolve()
@@ -112,8 +119,10 @@ def main():
             subprocess.run(['docker','exec','beon-ipquality-postgres-1','sh','-c',
                             'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --no-owner --no-acl'],
                            stdout=dump,check=True,timeout=180)
+        (root/'postgres').mkdir(mode=0o700)
         docker('run','-d','--name',postgres,'--network',network,'--memory','384m','--cpus','0.5',
-               '-e','POSTGRES_PASSWORD=private-staging-only','-e','POSTGRES_DB=avastel_stage',images['postgres'])
+               '-e','POSTGRES_PASSWORD=private-staging-only','-e','POSTGRES_DB=avastel_stage',
+               '-v',str(root/'postgres')+':/var/lib/postgresql/data',images['postgres'])
         active.append(postgres)
         for _ in range(60):
             if subprocess.run(['docker','exec',postgres,'pg_isready','-U','postgres','-d','avastel_stage'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:

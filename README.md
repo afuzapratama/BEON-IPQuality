@@ -200,6 +200,12 @@ Refresh source sekarang atomik dan menggantikan sinyal aktif source tersebut. Re
 
 ## Backup, monitoring, dan kapasitas
 
+VPS sudah di-upgrade menjadi 4 vCPU/8 GB RAM. NVMe lokal Azure 220 GB
+tersedia di `/mnt/beon-scratch` untuk staging sementara; storage sistem tetap
+30 GB. Disk NVMe ini dapat kehilangan data saat lifecycle VM, sehingga data
+produksi dan backup tetap memakai storage persisten. Lihat
+[panduan scratch storage](docs/VPS_SCRATCH_STORAGE.md).
+
 `beon-backup.timer` menjalankan backup harian pukul 02:30 WIB dengan jitter
 maksimum 15 menit. Pipeline memverifikasi checksum dan restore PostgreSQL/MMDB
 terisolasi, mengenkripsi bundle dengan age, mengunggah ke Bunny S3, lalu membaca

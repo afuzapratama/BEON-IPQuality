@@ -276,3 +276,18 @@ RAM; disk existing masih cukup untuk pengujian, 80 GB target headroom produksi.
 Sesudah resize RAM, uji dengan cap compiler yang juga dinaikkan (awal 2,5 GiB
 merupakan estimasi, bukan limit final terbukti). Source akun tetap di luar produksi.
 Lihat [evidence kandidat](evidence/phase6-compiler-grouped-arm-2026-10-13.json).
+
+## Upgrade VPS dan temporary NVMe — 13 Oktober 2026
+
+Upgrade terverifikasi: ARM64 4 vCPU, RAM ~7,7 GiB; root disk tetap 30 GB.
+NVMe tambahan 220 GB merupakan Azure temporary local disk, bukan managed
+storage persisten. Dipasang ext4 pada `/mnt/beon-scratch` (~216 GiB usable),
+dengan fstab nofail dan nodev/nosuid/noexec. Baca/tulis dan fstab lulus.
+Staging memakai mount guard dan PostgreSQL bind data pada root scratch; data
+produksi/backup tidak dipindahkan. Sebelas Python unit tests lulus.
+
+Setelah reboot upgrade, proxy yang sempat berhenti sudah dijalankan kembali.
+Pada post-check setup disk, snapshot lama sempat stale; reload admin memuat
+MMDB baru dari compiler dan health kembali healthy/fresh. Boot/mount penuh
+masih perlu drill; limit compiler produksi tetap 1,5 GiB.
+Lihat [panduan scratch storage](VPS_SCRATCH_STORAGE.md).
