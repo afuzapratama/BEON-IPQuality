@@ -1,0 +1,11 @@
+[Unit]
+Description=BEON local database and MMDB backup
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/beon-ipquality/geoipupdate.env
+WorkingDirectory=/opt/beon-ipquality
+ExecStart=/opt/beon-ipquality/scripts/backup.sh
+UMask=0077
+NoNewPrivileges=true
