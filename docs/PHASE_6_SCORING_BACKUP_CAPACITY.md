@@ -179,3 +179,17 @@ Korpus label independen/precision-recall, sustained/public TLS load dan varied-I
 workload, optimasi parser/compiler dataset jutaan baris, external uptime monitor
 untuk VPS/network mati total, serta reboot/full rollback drill masih diperlukan.
 Jangan menandai seluruh phase 6 selesai hanya berdasarkan baseline singkat ini.
+
+## Akses langsung HTTPS — 13 Oktober 2026
+
+Atas permintaan operator, proxy Caddy kini menyajikan halaman lookup pada `/`
+dan meneruskan `/health`, `/metrics`, serta `/api/v1/*` melalui domain publik.
+Health/metrics tidak membutuhkan key. Lookup dan stats memerlukan API key;
+cache/reload tetap membutuhkan admin key terpisah. Form browser mengirim key
+melalui header dan tidak menyimpannya. Tidak ada perubahan digest runtime Go.
+
+Validasi Caddy lulus sebelum reload SIGUSR1; konfigurasi sebelumnya dibackup
+sebagai `/opt/shortlink-agent/Caddyfile.before-direct-access`. Root, health,
+metrics, lookup, batch, dan stats dengan key lulus HTTP 200. Lookup tanpa key
+serta cache/reload memakai key klien mendapat 401. Endpoint lama yang dicatat
+sebagai internal-only pada laporan historis kini mengikuti akses di bagian ini.
