@@ -35,6 +35,12 @@ class OperationsTests(unittest.TestCase):
   with patch.dict(os.environ,{'TELEGRAM_BOT_TOKEN':'123:SECRET_TOKEN','TELEGRAM_CHAT_ID':'1'}),patch.object(ops.urllib.request,'urlopen',side_effect=RuntimeError('https://api.telegram.org/bot123:SECRET_TOKEN')):
    with self.assertRaises(RuntimeError) as caught:ops.notify('test')
    self.assertNotIn('SECRET_TOKEN',str(caught.exception))
+ def test_restoring_an_old_bundle_does_not_reset_backup_age(self):
+  with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'BACKUP_DIR':tmp,'PROJECT_ROOT':tmp},clear=False):
+   p=Path(tmp)/'20200101T000000Z-1';p.mkdir();(p/'COMPLETE').touch();(p/'VERIFIED').touch()
+   # Keep health/network isolated; only inspect the backup freshness result.
+   with patch.object(ops.urllib.request,'urlopen',side_effect=RuntimeError('fixture')),patch.object(ops.subprocess,'check_output',return_value=b'true false'),patch.object(ops,'has_offsite',return_value=False):
+    self.assertIn('No restore-verified backup in 36 hours',ops.checks())
  def test_malformed_backup_dates_are_not_candidates(self):
   self.assertIsNone(ops.stamp('20261301T000000Z-1'))
   self.assertIsNone(ops.stamp('../20260101T000000Z-1'))

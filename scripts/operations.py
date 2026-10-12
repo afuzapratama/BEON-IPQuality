@@ -244,11 +244,11 @@ def checks():
     if mem["MemAvailable"] / mem["MemTotal"] < .1:
         problems.append("Available RAM <10%")
     verified = [p for p in complete_bundles() if (p / "VERIFIED").is_file()]
-    if not verified or time.time() - (verified[-1] / "VERIFIED").stat().st_mtime > 36 * 3600:
+    if not verified or time.time() - stamp(verified[-1].name).timestamp() > 36 * 3600:
         problems.append("No restore-verified backup in 36 hours")
     if has_offsite():
         uploaded = [p for p in verified if (p / "OFFSITE_VERIFIED").is_file()]
-        if not uploaded or time.time() - (uploaded[-1] / "OFFSITE_VERIFIED").stat().st_mtime > 36 * 3600:
+        if not uploaded or time.time() - stamp(uploaded[-1].name).timestamp() > 36 * 3600:
             problems.append("No offsite-verified backup in 36 hours")
     for unit in ["beon-backup.service", "beon-geoipupdate.service"]:
         try:
