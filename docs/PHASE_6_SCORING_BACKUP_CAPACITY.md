@@ -331,3 +331,7 @@ Dokumen detail: [produksi akun](AVASTEL_PRIVATE_PRODUCTION.md),
 [drill/limits](OPERATIONS_RC4_VALIDATION.md), [review](LABEL_REVIEW_WORKFLOW.md).
 Eksperimen sebelumnya yang menyatakan akun staging/OOM adalah catatan historis;
 status terbaru mengikuti bagian ini.
+
+### Penyesuaian jadwal MaxMind — 13 Oktober 2026
+
+Timer GeoIP sebelumnya harian 03:20 WIB diganti Rabu/Sabtu 12:00 WIB + jitter maksimal 30 menit. City mengikuti rilis Selasa/Jumat; ASN yang rilis harian sengaja ikut jadwal dua kali seminggu. Jam rilis upstream tidak dijamin, sehingga jeda ini bukan SLA ketersediaan rilis. Output tetap pada direktori MMDB proyek.

@@ -57,7 +57,7 @@ MMDB_HOST_DIR=/opt/beon-ipquality/data/mmdb \
 
 Tidak ada auto-install package atau copy kredensial dari script updater. Native timer memakai `configs/systemd/beon-geoipupdate.service` dan `.timer`; env template tersedia pada `configs/geoipupdate.env.example`. Agent menyesuaikan WorkingDirectory/ExecStart/ReadWritePaths bila root proyek berbeda. `geoipupdate.env` hanya berisi path, mode 600; GeoIP.conf juga mode 600. AccountID dan LicenseKey tidak dikirim sebagai command arguments/log.
 
-Timer sekali per hari pukul 03:20 Asia/Jakarta (WIB), random delay sampai 30 menit dan Persistent. Output GeoLite2 mode 644 agar reader container dapat membacanya. Periksa cron/timer bawaan paket dan updater existing agar dataset proyek hanya mempunyai satu updater; workload lain tidak diubah tanpa pemeriksaan. Host timer adalah satu-satunya updater produksi; profil updater container pada Compose development tidak dijalankan bersamaan. Setelah update, compiler membaca ASN pada compile berikutnya dan API/Judge memeriksa checksum pada reload berikutnya. Download MaxMind nyata memerlukan kredensial pengguna; fixture test hanya memverifikasi routing path.
+Timer Rabu dan Sabtu pukul 12:00 Asia/Jakarta (WIB), random delay sampai 30 menit dan Persistent. Output GeoLite2 mode 644 agar reader container dapat membacanya. Periksa cron/timer bawaan paket dan updater existing agar dataset proyek hanya mempunyai satu updater; workload lain tidak diubah tanpa pemeriksaan. Host timer adalah satu-satunya updater produksi; profil updater container pada Compose development tidak dijalankan bersamaan. Setelah update, compiler membaca ASN pada compile berikutnya dan API/Judge memeriksa checksum pada reload berikutnya. Download MaxMind nyata memerlukan kredensial pengguna; fixture test hanya memverifikasi routing path.
 
 ## Bootstrap
 
@@ -119,3 +119,7 @@ Glances distro Ubuntu 26.04 tidak menyertakan asset web; pilot memakai venv
 memakai user `glances` dan loopback 61208; akses melalui SSH tunnel.
 Template `beon-backup.service`/timer membuat bundle privat setiap hari; enable
 setelah backup/restore pertama berhasil. Retention/offsite/alert tetap harus diselesaikan.
+
+Jadwal MaxMind disesuaikan 13 Oktober 2026: GeoLite2 City/Country dirilis Selasa dan Jumat, sedangkan ASN harian. Proyek mengambil City/ASN bersama dua kali seminggu untuk mengurangi frekuensi akses. Pukul 12:00 WIB pada hari berikutnya merupakan jeda operasional, bukan jaminan jam rilis upstream. Rilis terlambat atau di luar jadwal akan diambil pada eksekusi berikutnya.
+
+Referensi: https://dev.maxmind.com/geoip/release-notes/2025-07-16-a-number-of-geoip-databases-now-released-every-weekday/ dan https://dev.maxmind.com/geoip/release-notes/2024-06-18-change-to-geolite2-asn-update-schedule/
