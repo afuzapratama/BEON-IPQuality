@@ -269,3 +269,61 @@ estimasi engineering, bukan peak kebutuhan yang sudah terbukti. Ulangi bounded
 ARM staging, ukur writer/pipeline gabungan dan headroom keseluruhan sebelum
 menentukan limit final atau mengaktifkan source akun. Penggunaan dataset akun
 pada API dan evaluasi holdout tetap belum ditutup.
+
+## Uji ulang 8 GB: dataset gabungan berhasil — 13 Oktober 2026
+
+Pada VPS ARM64 4 vCPU/RAM 7.904 MiB, staging gabungan memakai scratch NVMe,
+compiler kandidat grouped aggregation, cap **2.560 MiB** dan GOMEMLIMIT 1.800 MiB.
+PostgreSQL tetap dibatasi 384 MiB/0,5 CPU; worker 1 CPU. Source normalized sama
+seperti pengujian sebelumnya, tetapi snapshot baseline pilot diambil ulang.
+
+- Baseline 210.740 active rows; gabungan **1.210.128 active rows**.
+- Ingest 68,60 detik; peak proses teramati 615.813.120 byte (~587 MiB).
+- Compiler **53,75 detik**, exit 0, OOMKilled=false, tanpa guard abort.
+- Peak proses teramati **2.084.384.768 byte (~1,94 GiB)**; peak cgroup teramati
+  2.093.694.976 byte (~1,95 GiB). Ini pengukuran tersampel pada satu run.
+- MMDB 60.588.365 byte (~57,8 MiB); reputasi, City dan ASN lolos offline verification.
+- Database staging ~569 MiB. Data clone DB memakai bind directory pada scratch.
+- API staging terautentikasi di port loopback acak (limit 192 MiB) health healthy,
+  snapshot fresh. 100 sampel teringest proxy=true; 2 risky, score 32–65; whitelist
+  override, IPv6, batch, unauthenticated lookup rejection dan wrong-admin-key
+  rejection lulus. Ini **integration self-check**, bukan akurasi holdout.
+
+[Evidence 8 GB](evidence/phase6-avastel-8gb-arm-pass-2026-10-13.json) memuat binary
+hash, batas resource, snapshot MMDB, source hash, hasil API dan scope gate.
+Raw report lokal ada di folder staging akun operator; artifact privat sementara
+ada di `/mnt/beon-scratch/staging/avastel-8gb-20261013`. Container/network dan
+upload sementara dibersihkan; scratch bind data/log dipertahankan untuk audit.
+API produksi tetap rc.3 healthy/fresh. Source akun, image compiler produksi dan
+limit compiler produksi belum diubah dari 1,5 GiB.
+
+Contoh uji resource setelah upgrade, menggunakan source normalized yang sudah
+terverifikasi dan binary kandidat ARM64 dari commit pilihan:
+
+```bash
+sudo python3 scripts/stage-avastel-arm.py \
+  --root /mnt/beon-scratch/staging/new-run \
+  --source /private/proxy-ips.txt --sha256 NORMALIZED_SHA256 \
+  --compiler-binary /private/compiler-arm64 \
+  --compiler-memory-mib 2560 --compiler-go-memory-mib 1800
+sudo python3 scripts/check-staging-api.py \
+  --root /mnt/beon-scratch/staging/new-run
+```
+
+Root harus baru dan scratch mounted. Binary kandidat harus berada pada filesystem
+executable; scratch mount memakai noexec. CLI membatasi pilihan cap dan menolak
+Go target di atas cap. Headroom awal menyesuaikan cap (minimal cap+700 MiB);
+headroom sebelum compiler minimal cap+300 MiB; host-pressure guard tetap 600 MiB.
+
+### Gate yang sudah dan belum lolos
+
+Resource pipeline serta API integration pada **dataset/run ini sudah lolos**.
+Cap 2,5 GiB dengan Go target 1.800 MiB dapat menjadi baseline untuk pengujian lanjut,
+bukan jaminan setiap dataset atau beban produksi aman. CPU/disk contention,
+retention lama, sustained/public TLS workload dan reboot/rollback masih perlu uji.
+Data akun masih dibatasi staging sampai penggunaan lookup turunan diperbolehkan.
+Compiler kandidat juga memerlukan release dengan digest dan deployment terverifikasi
+sebelum dipasang di produksi. Korpus independen/negative controls belum lengkap.
+Untuk penambahan source produksi berikutnya, evaluasi jalur repository GitHub
+berlisensi MIT secara terpisah dari dataset akun, tanpa menjadikan data training
+itu sendiri sebagai holdout akurasi.

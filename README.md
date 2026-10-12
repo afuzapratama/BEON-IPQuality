@@ -233,12 +233,14 @@ ssh -i /path/key.pem -L 61208:127.0.0.1:61208 ubuntu@VPS_IP
 
 | Kebutuhan | vCPU ARM64 | RAM | SSD/NVMe |
 |---|---:|---:|---:|
-| Pilot terkurasi saat ini | 2 | 4 GB | 30 GB |
+| Baseline pilot terkurasi awal | 2 | 4 GB | 30 GB |
+| VPS aktif; dataset gabungan diuji di staging | 4 | 8 GB | 30 GB persisten + 220 GB sementara |
 | Rekomendasi awal produksi satu node | 4 | 8 GB | 80 GB |
 | Estimasi untuk dataset/traffic lebih besar | 8 | 16 GB | 160 GB |
 
-Dua rekomendasi terakhir merupakan estimasi dengan headroom, belum benchmark
-pada hardware tersebut. Feed jutaan baris masih membutuhkan optimasi dan
+Ukuran storage target serta baris pertumbuhan merupakan estimasi dengan headroom.
+VPS 4 vCPU/8 GB sudah menjalani satu run pipeline gabungan terisolasi;
+kapasitas beban produksi berkelanjutan belum diukur. Feed jutaan baris masih membutuhkan optimasi dan
 pengukuran; FireHOL Anonymous belum aktif karena ingest mengalami OOM pada cap
 1 GiB. Peak compiler dataset terkurasi sekitar 492 MiB.
 
@@ -257,9 +259,10 @@ di [bukti kapasitas phase 6](docs/evidence/phase6-arm-capacity-2026-10-12.json).
    Dataset akun 1 juta baris juga sudah diuji pada pipeline staging lokal;
    belum diaktifkan di produksi karena ketentuan penggunaan dan headroom ARM.
    Uji gabungan pada ARM dihentikan guard saat compiler mendekati cap 1,5 GiB;
-   kandidat aggregation sudah diuji, tetapi writer masih OOM pada cap 1,5 GiB.
-   Untuk tahap dataset gabungan, rekomendasi RAM 8 GB/4 vCPU, lalu ukur ulang
-   dengan cap compiler yang disesuaikan. Kandidat belum dipasang di produksi.
+   Setelah upgrade 4 vCPU/8 GB, uji gabungan 1,21 juta rows berhasil pada
+   cap compiler 2,5 GiB, peak proses ~1,94 GiB. API integration staging lulus.
+   Kandidat dan dataset akun belum dipasang di produksi; scope ini belum
+   membuktikan akurasi independen atau kapasitas beban publik berkelanjutan.
 2. Uji beban HTTPS berkelanjutan dengan variasi IP, sekaligus ukur resource
    ingest/compiler dan pertumbuhan disk pada dataset yang ditargetkan.
 3. Tambahkan uptime monitoring eksternal, lalu lakukan reboot dan full rollback/

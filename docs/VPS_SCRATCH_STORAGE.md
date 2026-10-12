@@ -48,3 +48,10 @@ snapshot baru; reload admin memuat snapshot baru dan memulihkan health. Kejadian
 ini terpisah dari setup filesystem, dan tetap perlu dicakup reboot/freshness drill.
 Tidak ada database/MMDB produksi yang dipindahkan ke scratch. Limit compiler
 produksi tetap 1,5 GiB; pengujian limit lebih besar merupakan langkah berikutnya.
+
+## Hasil staging sesudah setup
+
+Uji gabungan pada scratch dengan 4 vCPU/8 GB dan limit compiler staging 2,5 GiB
+berhasil. Dataset 1.210.128 active rows, compile 53,75 detik/peak proses ~1,94 GiB.
+API integration juga lulus. Limit compiler produksi tetap 1,5 GiB, source akun
+tetap staging. Lihat [evidence](evidence/phase6-avastel-8gb-arm-pass-2026-10-13.json).

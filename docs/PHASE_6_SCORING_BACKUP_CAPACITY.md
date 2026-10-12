@@ -87,7 +87,7 @@ Glances tetap untuk inspeksi CPU/RAM/network/disk I/O melalui SSH tunnel.
 
 | Pemakaian | vCPU ARM64 | RAM | SSD/NVMe |
 |---|---:|---:|---:|
-| Pilot terkurasi saat ini | 2 | 4 GB | 30 GB |
+| Baseline pilot awal, sebelum upgrade | 2 | 4 GB | 30 GB |
 | Target awal satu node API + PostgreSQL + pipeline | 4 | 8 GB | 80 GB |
 | Feed jutaan baris / pertumbuhan dan traffic lebih besar | 8 | 16 GB | 160 GB |
 
@@ -291,3 +291,23 @@ Pada post-check setup disk, snapshot lama sempat stale; reload admin memuat
 MMDB baru dari compiler dan health kembali healthy/fresh. Boot/mount penuh
 masih perlu drill; limit compiler produksi tetap 1,5 GiB.
 Lihat [panduan scratch storage](VPS_SCRATCH_STORAGE.md).
+
+## Gate dataset gabungan pada VPS 8 GB — 13 Oktober 2026
+
+Uji ulang menggunakan scratch NVMe, compiler kandidat grouped aggregation,
+cap 2,5 GiB dan Go target 1.800 MiB. Baseline 210.740 rows → 1.210.128 gabungan.
+Ingest 68,60 detik/~587 MiB peak proses; compiler **53,75 detik/~1,94 GiB peak
+proses**, exit 0 tanpa OOM/guard abort. MMDB ~57,8 MiB reputasi/City/ASN valid.
+
+API staging (192 MiB, loopback, key sementara) lulus health fresh, 100 sampel
+proxy, batch, IPv6, whitelist dan pemisahan auth/admin. Dua dari 100 sampel risky
+(score range 32–65). Ini self-check integrasi, bukan angka akurasi independen.
+Gate resource/API integration **pada run ini** lolos; sustained/SLO belum terbukti.
+Produksi tetap rc.3 dan limit compiler 1,5 GiB, source akun belum diaktifkan.
+
+Container/network/upload staging dibersihkan, bind data/artifact scratch privat
+masih tersedia untuk audit. Post-check live healthy/fresh dan alert checker sukses.
+Sebelas Python tests lulus. Lihat
+[evidence 8 GB](evidence/phase6-avastel-8gb-arm-pass-2026-10-13.json).
+Sisa gate: izin penggunaan hasil lookup dataset akun, release compiler immutable,
+holdout independen, sustained/public TLS workload, reboot/rollback/external uptime.

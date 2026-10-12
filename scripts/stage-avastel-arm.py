@@ -49,11 +49,16 @@ def main():
     p.add_argument('--source',required=True)
     p.add_argument('--sha256',required=True)
     p.add_argument('--compiler-binary')
+    p.add_argument('--compiler-memory-mib',type=int,choices=(1536,2048,2560,3072),default=1536)
+    p.add_argument('--compiler-go-memory-mib',type=int,default=1100)
     args=p.parse_args()
     if platform.machine() not in ('aarch64','arm64'):
         p.error('requires ARM64')
-    if available() < 2000*1024*1024:
-        p.error('requires at least 2000 MiB available memory before staging')
+    if not 0 < args.compiler_go_memory_mib < args.compiler_memory_mib:
+        p.error("Go memory target must be below container limit")
+    required_start=max(2000,args.compiler_memory_mib+700)
+    if available() < required_start*1024*1024:
+        p.error(f'requires at least {required_start} MiB available memory before staging')
     os.umask(0o077)
     root=Path(args.root).resolve()
     validate_scratch_root(root)
@@ -64,7 +69,7 @@ def main():
         raise ValueError('source checksum mismatch')
     report=dict(started_at=datetime.now(timezone.utc).isoformat(),architecture=platform.machine(),source_sha256=args.sha256,production_enabled=False,
                 scope='Combined active pilot snapshot + account proxy-positive IPs on ARM; isolated DB/network/MMDB',
-                memory_limits=dict(postgres='384MiB',ingestor='896MiB',compiler='1536MiB'),
+                memory_limits=dict(postgres='384MiB',ingestor='896MiB',compiler=f'{args.compiler_memory_mib}MiB'),
                 cpu_limits=dict(postgres=0.5,worker=1.0),pressure_abort_mib=600, stages={})
     prefix='beon-avastel-arm-'+str(os.getpid())
     network=prefix+'-network'
@@ -75,6 +80,8 @@ def main():
     for role in ('postgres','ingestor','compiler','api'):
         images[role]=docker('inspect',f'beon-ipquality-{role}-1','--format','{{.Config.Image}}')
     report['images']=images
+    report['go_memory_targets']={'ingestor':'700MiB','compiler':f'{args.compiler_go_memory_mib}MiB'}
+    report['required_start_memory_mib']=required_start
     candidate=Path(args.compiler_binary).resolve() if args.compiler_binary else None
     if candidate:
         report['compiler_binary_sha256']=hashlib.sha256(candidate.read_bytes()).hexdigest()
@@ -141,8 +148,9 @@ def main():
                       GEOIP_CITY_PATH='/app/data/mmdb/GeoLite2-City.mmdb',GEOIP_ASN_PATH='/app/data/mmdb/GeoLite2-ASN.mmdb',
                       INGESTOR_CONCURRENCY='1',METRICS_HOST='127.0.0.1',GOGC='50',LOG_LEVEL='info')
         for role,limit,gomemory,arguments in [('ingestor','896m','700MiB',['-once','-feeds','/app/configs/ingest.yaml']),
-                                            ('compiler','1536m','1100MiB',['-oneshot'])]:
-            if available()<1800*1024*1024:
+                                            ('compiler',f'{args.compiler_memory_mib}m',f'{args.compiler_go_memory_mib}MiB',['-oneshot'])]:
+            required_worker=max(1800,args.compiler_memory_mib+300) if role=="compiler" else 1800
+            if available()<required_worker*1024*1024:
                 report['stages'][role]={'aborted':'insufficient memory headroom before worker'}
                 break
             name=prefix+'-'+role
