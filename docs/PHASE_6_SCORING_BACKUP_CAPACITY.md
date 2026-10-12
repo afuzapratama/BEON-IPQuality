@@ -239,3 +239,21 @@ Delapan unit tests evaluator/parser lulus. Raw artifacts privat dipertahankan,
 container PostgreSQL/volume staging dan server loopback sudah dibersihkan.
 Lihat [panduan](SCORING_EVALUATION.md) dan
 [evidence agregat](evidence/phase6-avastel-account-staging-2026-10-13.json).
+
+## Gate resource dataset gabungan ARM — 13 Oktober 2026
+
+Clone DB pilot + GeoLite2 + source akun diuji dengan rc.3 ARM64 pada network/DB/
+MMDB staging terpisah. Rows aktif 210.160 → 1.209.548. Ingest berhasil 71,47 detik,
+peak proses teramati ~648 MiB. Compiler **belum selesai**: guard host pressure
+menghentikannya setelah 15,80 detik, peak proses ~1,49 GiB dekat cap 1,5 GiB.
+Exit 137 merupakan guard kill; OOMKilled=false. Tidak ada MMDB kandidat selesai.
+
+API live healthy, snapshot fresh, alert checker sukses sesudah uji. Seluruh
+container/volume/network staging dibersihkan. Source akun tidak diaktifkan pada
+produksi. Gate resource tetap terbuka; prioritas berikutnya mengurangi memory
+aggregation lalu mengulang bounded ARM staging. Rekomendasi 8 GB belum merupakan
+hasil resize/benchmark. Penggunaan dataset akun untuk API masih perlu diperjelas.
+
+[Evidence gabungan ARM](evidence/phase6-avastel-combined-arm-2026-10-13.json)
+dan [detail prosedur/keputusan](SCORING_EVALUATION.md). Sepuluh unit tests
+parser/evaluator/guard lulus; tidak ada digest runtime produksi yang diubah.

@@ -1,0 +1,65 @@
+{
+  "architecture": "aarch64",
+  "source_sha256": "dc2b91caf2f76911a8ce640b9c2aa89967ea5e95e083d16a7ded99b0bac619a3",
+  "production_enabled": false,
+  "scope": "Combined active pilot snapshot + account proxy-positive IPs on ARM; isolated DB/network/MMDB",
+  "memory_limits": {
+    "postgres": "384MiB",
+    "ingestor": "896MiB",
+    "compiler": "1536MiB"
+  },
+  "cpu_limits": {
+    "postgres": 0.5,
+    "worker": 1.0
+  },
+  "pressure_abort_mib": 600,
+  "stages": {
+    "ingestor": {
+      "elapsed_seconds": 71.47326962597435,
+      "exit_code": 0,
+      "oom_killed": false,
+      "process_hwm_bytes_sampled": 679862272,
+      "cgroup_peak_bytes_sampled": 674111488,
+      "aborted": null
+    },
+    "compiler": {
+      "elapsed_seconds": 15.801642465987243,
+      "exit_code": 137,
+      "oom_killed": false,
+      "process_hwm_bytes_sampled": 1601388544,
+      "cgroup_peak_bytes_sampled": 1593069568,
+      "aborted": "host pressure or worker timeout"
+    }
+  },
+  "images": {
+    "postgres": "postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+    "ingestor": "ghcr.io/afuzapratama/beon-ipquality-ingestor@sha256:a54722b984f0350d322b7cc6cf8e038246da2a90811b631be04fe16760f250b9",
+    "compiler": "ghcr.io/afuzapratama/beon-ipquality-compiler@sha256:b5857379e49182b3a3b6cc1c5443821a310f192a6cf7d15e682fb93b5c736f22",
+    "api": "ghcr.io/afuzapratama/beon-ipquality-api@sha256:e32d7fd2f8b293f58269cd54491ad652bfed6219dce4de39b49956e5c32337f2"
+  },
+  "baseline_active_rows": 210160,
+  "combined_active_rows": 1209548,
+  "staging_database_bytes": 595875507,
+  "measurement_date_wib": "2026-10-13",
+  "passed": false,
+  "decision": "Do not activate account source on current pilot; optimize aggregation then repeat bounded ARM test",
+  "production_postcheck": {
+    "health": "healthy",
+    "snapshot_stale": false,
+    "version": "v1.1.0-rc.3",
+    "alert_checker_result": "success"
+  },
+  "cleanup_verified": {
+    "staging_containers_removed": true,
+    "staging_network_removed": true,
+    "temporary_upload_removed": true
+  },
+  "observation": "Guard stopped compiler on host pressure, not kernel OOM; compiler fetched all rows but did not finish aggregation/publication; no candidate MMDB produced",
+  "limitations": [
+    "Single bounded run",
+    "Process HWM and cgroup peaks sampled",
+    "Worker 1 CPU and PostgreSQL 0.5 CPU",
+    "Concurrent pilot services remained running",
+    "No sustained public latency/load test"
+  ]
+}

@@ -180,3 +180,50 @@ produksi, lakukan pengujian dataset gabungan pada ARM dengan cap nyata, cek
 retention/refresh/removal source, kemudian tentukan optimasi atau upgrade resource.
 Korpus negatif independen dan holdout berbeda tetap diperlukan untuk evaluasi
 akurasi sesudah integrasi. Tidak ada timer akun atau ingest produksi yang diaktifkan.
+
+## Gabungan pilot + Avastel pada ARM — 13 Oktober 2026
+
+Staging di VPS memakai image rc.3 berbasis digest ARM64, clone PostgreSQL konsisten
+melalui read-only pg_dump, salinan GeoLite2 City/ASN, serta konfigurasi source
+pilot aktif ditambah source akun staging. Network Docker internal, PostgreSQL,
+HTTP source, dan MMDB terpisah. Tidak ada perubahan feed/MMDB produksi.
+
+Guard membutuhkan RAM available minimum 2.000 MiB sebelum staging dan 1.800 MiB
+sebelum worker. Worker dihentikan bila RAM available turun di bawah 600 MiB atau
+melewati 300 detik. Batas container: PostgreSQL 384 MiB/0,5 CPU; ingestor 896 MiB;
+compiler 1.536 MiB; masing-masing worker 1 CPU. Ini pengujian dengan batas
+resource, bukan benchmark throughput maksimum VPS.
+
+Hasil nyata:
+
+- Baseline 210.160 active rows, bertambah menjadi 1.209.548 setelah ingest akun.
+- Ingest ARM berhasil: 71,47 detik, process HWM teramati 679.862.272 byte
+  (~648 MiB), tidak OOM. Peak cgroup teramati 674.111.488 byte.
+- Compiler membaca seluruh 1.209.548 rows, tetapi **dihentikan guard setelah
+  15,80 detik** karena host pressure. Peak proses teramati 1.601.388.544 byte
+  (~1,49 GiB), cgroup 1.593.069.568 byte, dekat cap 1,5 GiB.
+- Exit 137 akibat guard kill; Docker `OOMKilled=false`. Jangan mencatatnya sebagai
+  kernel OOM atau compile sukses. Tidak ada MMDB kandidat yang selesai diterbitkan.
+- Database staging gabungan berukuran 595.875.507 byte (~568 MiB).
+- Pemeriksaan API produksi tetap healthy, snapshot stale=false, runtime rc.3;
+  alert checker Result=success. Container/volume/network staging sudah dihapus.
+
+[Evidence ARM](evidence/phase6-avastel-combined-arm-2026-10-13.json) tersedia tanpa
+raw data atau secret. Artifact privat disimpan pada
+`/var/lib/beon-ipquality/staging/avastel-arm-20261013` dan laporan lokal di folder
+staging akun operator. Script reusable `scripts/stage-avastel-arm.py` memerlukan
+root, Python/PyYAML, Docker dan layout pilot yang sama. Ia membuat direktori baru
+serta membaca source normalized melalui path/hash; API key akun tidak dikirim ke VPS.
+
+### Keputusan
+
+Dataset gabungan **belum lolos gate resource** pada pilot 4 GB. Jangan menaikkan
+cap compiler pada host yang sama tanpa headroom terukur. Optimasi berikutnya
+menargetkan peak aggregation: implementasi sekarang menahan raw rows, map semua
+prefix dengan map source/threat per-prefix, dan output entries pada satu waktu.
+Ukur perbaikan dengan regresi CIDR overlap, whitelist, determinisme evidence,
+ASN, serta pipeline nyata sebelum mengulang staging ARM dengan batas yang sama.
+
+Rekomendasi awal 4 vCPU/8 GB tetap merupakan estimasi headroom; bukan host yang
+sudah diuji atau di-upgrade. Hak penggunaan lookup turunan dataset akun dan
+korpus holdout independen tetap merupakan gate terpisah.
