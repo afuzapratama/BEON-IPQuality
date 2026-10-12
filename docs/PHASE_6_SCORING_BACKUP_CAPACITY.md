@@ -193,3 +193,13 @@ sebagai `/opt/shortlink-agent/Caddyfile.before-direct-access`. Root, health,
 metrics, lookup, batch, dan stats dengan key lulus HTTP 200. Lookup tanpa key
 serta cache/reload memakai key klien mendapat 401. Endpoint lama yang dicatat
 sebagai internal-only pada laporan historis kini mengikuti akses di bagian ini.
+
+## Persiapan evaluasi akurasi — 13 Oktober 2026
+
+Evaluator offline tersedia pada `scripts/evaluate-scoring.py`, dengan
+[panduan korpus dan provenance](SCORING_EVALUATION.md). Alat melaporkan confusion
+matrix, precision/recall/F1 dan false-positive rate per kategori; input dengan
+coverage tidak lengkap atau snapshot campuran ditolak. Tiga unit tests lulus,
+termasuk denominator nol dan whitelist pada eksperimen threshold. Korpus label
+independen nyata belum tersedia; gate akurasi belum ditutup dan scoring VPS
+belum diubah dari hasil fixture.
