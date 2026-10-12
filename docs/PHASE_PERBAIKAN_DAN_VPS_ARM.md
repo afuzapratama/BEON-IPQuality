@@ -75,11 +75,11 @@ Phase 0 → 1 → 2 → 3 → 4 → 5 → 6. Persiapan dokumen backup, monitorin
 
 Informasi yang diperlukan saat gate ini: IP/hostname, port SSH, username, lokasi file SSH private key yang bisa dipakai di environment kerja, status sudo, OS/versi, vCPU/RAM/disk, layanan yang sudah berjalan, serta domain API bila tersedia. Kunci privat tidak dicantumkan dalam docs/commit/log.
 
-- [ ] Periksa host identity, arsitektur nyata (`aarch64`/ARM64), OS, resource, ruang disk, port dan service yang sudah ada; ARM32 memerlukan penyesuaian paket/build.
+- [x] Periksa host identity, arsitektur nyata (`aarch64`/ARM64), OS, resource, ruang disk, port dan service yang sudah ada; ARM32 memerlukan penyesuaian paket/build.
 - [ ] Tentukan apakah database/pipeline penuh muat pada VPS dari kebutuhan peak RAM compiler, bukan hanya RAM API idle.
-- [ ] Pasang Docker Engine/Compose dan Nginx yang sesuai host; jangan menimpa service existing tanpa pemeriksaan.
-- [ ] Atur direktori deployment, permission secret, volume persisten, firewall dan akses SSH yang tetap berfungsi.
-- [ ] Pasang Glances native, service systemd dan akses loopback; verifikasi CPU/RAM/network/disk I/O terbaca serta ukur overhead.
+- [x] Periksa Docker Engine/Compose dan reverse proxy host; gunakan Caddy existing agar tidak berebut port 80/443.
+- [x] Atur direktori deployment, permission secret, volume persisten, firewall dan akses SSH yang tetap berfungsi.
+- [x] Pasang Glances native, service systemd dan akses loopback; verifikasi CPU/RAM/network/disk I/O terbaca serta ukur overhead.
 - [ ] Tentukan tujuan backup di luar VPS dan kanal alert dengan pengguna; data ini dibutuhkan untuk melengkapi operasi produksi.
 
 ## Phase 5 — Pilot deployment satu instance
@@ -192,3 +192,7 @@ Arsip yang dipublish diunduh ulang; SHA256SUMS, empat ELF binary di tiap arsitek
 Paket phase 3 siap untuk pilot, bukan bukti produksi telah berjalan. Main/draft PR tetap dalam proses review; release candidate dipakai sebagai revision tetap. Native ARM VPS, feed nyata, file/kredensial MaxMind, DNS/HTTPS, offsite backup dan performa/drill data nyata diuji pada phase 4–6.
 
 **Gate phase 4 sekarang tercapai.** Informasi server diperlukan: IP, port SSH, username, path file SSH key yang dapat diakses agent, sudo/OS/vCPU/RAM/disk, domain bila tersedia, dan path file MaxMind (AccountID/LicenseKey). Agent akan menerapkan path kredensial serta direktori MMDB proyek pada server, memasang native updater/timer dan monitoring ringan setelah informasi itu tersedia. Secret tidak perlu dimasukkan ke repository.
+
+### 12 Oktober 2026 — VPS ARM dan temuan pilot
+
+Lihat [catatan pilot](VPS_ARM_PILOT_2026-10-12.md). Akses host, Docker, direktori, reverse proxy existing, Glances loopback dan GeoLite2 native/timer telah diperiksa atau dipasang. Feed FireHOL Anonymous membutuhkan perbaikan bounded-memory sebelum diaktifkan pada host 4 GB; eDROP/SSL blacklist kosong dikecualikan dari pilot. Ingest 22 kelompok feed berhasil. Compiler reserved-network diperbaiki dan mendapat uji regresi; deployment release baru serta gate API/backup masih berjalan.

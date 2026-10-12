@@ -53,13 +53,7 @@ func New(cfg *config.Config) (*Compiler, error) {
 	}
 
 	// Create MMDB writer
-	writerConfig := mmdb.WriterConfig{
-		DatabaseType:        "BEON-IPReputation",
-		Description:         "BEON IP Reputation Database",
-		RecordSize:          cfg.MMDB.RecordSize,
-		IPVersion:           0,
-		IncludeReservedNets: false,
-	}
+	writerConfig := reputationWriterConfig(cfg.MMDB.RecordSize)
 	mmdbWriter := mmdb.NewWriter(writerConfig)
 
 	feeds, err := config.LoadFeeds(cfg.MMDB.FeedsPath)
@@ -75,6 +69,18 @@ func New(cfg *config.Config) (*Compiler, error) {
 		mmdbWriter: mmdbWriter,
 		scorer:     scorer,
 	}, nil
+}
+
+// reputationWriterConfig includes private/bogon networks carried by feeds and
+// local whitelists. Rejecting reserved networks aborts otherwise valid snapshots.
+func reputationWriterConfig(recordSize int) mmdb.WriterConfig {
+	return mmdb.WriterConfig{
+		DatabaseType:        "BEON-IPReputation",
+		Description:         "BEON IP Reputation Database",
+		RecordSize:          recordSize,
+		IPVersion:           0,
+		IncludeReservedNets: true,
+	}
 }
 
 // Close closes database connections

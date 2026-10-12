@@ -3,6 +3,8 @@ package compiler
 import (
 	"bytes"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,5 +59,30 @@ func TestEmptyCompilationPreservesExistingSnapshot(t *testing.T) {
 	}
 	if _, err := os.Stat(cfg.MMDB.OutputPath); !os.IsNotExist(err) {
 		t.Fatalf("unexpected bootstrap artifact: %v", err)
+	}
+}
+
+func TestCompilerAcceptsReservedFeedNetworksAndLocalWhitelist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reputation.mmdb")
+	entries := []mmdb.ReputationEntry{
+		{Prefix: netip.MustParsePrefix("0.0.0.0/32"), RiskScore: 85, RiskLevel: "high"},
+		{Prefix: netip.MustParsePrefix("127.0.0.0/8"), RiskScore: 85, RiskLevel: "high"},
+		{Prefix: netip.MustParsePrefix("127.0.0.0/8"), Whitelisted: true, RiskLevel: "clean"},
+		{Prefix: netip.MustParsePrefix("10.0.0.0/8"), Whitelisted: true, RiskLevel: "clean"},
+		{Prefix: netip.MustParsePrefix("::1/128"), Whitelisted: true, RiskLevel: "clean"},
+	}
+	if err := mmdb.NewWriter(reputationWriterConfig(28)).CompileToMMDB(entries, path); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := mmdb.NewReader(path, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	for _, ip := range []string{"127.0.0.1", "10.1.2.3", "::1"} {
+		got, err := reader.LookupAll(netip.MustParseAddr(ip))
+		if err != nil || !got.Whitelisted || got.Score != 0 {
+			t.Fatalf("%s: whitelist missing: %#v, %v", ip, got, err)
+		}
 	}
 }
