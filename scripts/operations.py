@@ -219,12 +219,49 @@ def finalize():
     notify("BEON backup verified: " + latest.name + ("; Bunny readback verified" if has_offsite() else "; offsite pending"))
 
 
+
+def pipeline_failures():
+    """Track new error counters and clear only after a later successful attempt."""
+    path=state_dir()/"pipeline-state.json"
+    established=path.exists()
+    previous=json.loads(path.read_text()) if established else {}
+    current={};problems=[]
+    project=os.environ.get("COMPOSE_PROJECT_NAME","beon-ipquality")
+    for service,port in [("ingestor",9091),("compiler",9092)]:
+        try:
+            text=subprocess.check_output(["docker","exec",project+"-"+service+"-1","wget","-q","-O","-","http://127.0.0.1:"+str(port)+"/metrics"],stderr=subprocess.DEVNULL,timeout=8).decode()
+            for line in text.splitlines():
+                metric=re.match(r'ipquality_(feed_fetches|compilations)_total\{([^}]+)\} ([0-9.eE+-]+)$',line)
+                if not metric: continue
+                labels=dict(re.findall(r'(\w+)="([^"]*)"',metric[2]))
+                status=labels.get("status")
+                if status not in ["error","success"]: continue
+                key="compile" if service=="compiler" else "feed/"+labels.get("feed","")+"/"+labels.get("source","")
+                current.setdefault(key,{"error":0,"success":0})[status]=float(metric[3])
+        except Exception:
+            problems.append(service+" internal metrics unavailable")
+    for key,counts in current.items():
+        old=previous.get(key, {"error":0,"success":0,"active":False} if established else None)
+        active=bool(old and old.get("active"))
+        if old and (counts["error"]<old["error"] or counts["success"]<old["success"]): active=False
+        elif old and counts["error"]>old["error"]: active=True
+        elif old and counts["success"]>old["success"]: active=False
+        counts["active"]=active
+        if active: problems.append("Pipeline attempt failed: "+key)
+    atomic_json(path,current)
+    return problems
+
+
 def checks():
     problems = []
     try:
         with urllib.request.urlopen(os.environ.get("HEALTH_URL", "http://127.0.0.1:8080/health"), timeout=8) as r:
-            if r.status != 200 or json.load(r).get("status") != "healthy":
+            data=json.load(r)
+            if r.status != 200 or data.get("status") != "healthy":
                 problems.append("API health or feed/snapshot freshness failed")
+            for feed in data.get("snapshot",{}).get("feeds",[]):
+                if feed.get("latest_status")=="error":
+                    problems.append("Feed refresh failed: "+feed.get("feed","")+"/"+feed.get("source",""))
     except Exception:
         problems.append("API health or feed/snapshot freshness failed")
     project = os.environ.get("COMPOSE_PROJECT_NAME", "beon-ipquality")
@@ -257,6 +294,7 @@ def checks():
                 problems.append(unit + " failed")
         except Exception:
             problems.append(unit + " status unavailable")
+    problems.extend(pipeline_failures())
     return sorted(problems)
 
 

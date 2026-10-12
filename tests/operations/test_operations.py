@@ -39,8 +39,24 @@ class OperationsTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'BACKUP_DIR':tmp,'PROJECT_ROOT':tmp},clear=False):
    p=Path(tmp)/'20200101T000000Z-1';p.mkdir();(p/'COMPLETE').touch();(p/'VERIFIED').touch()
    # Keep health/network isolated; only inspect the backup freshness result.
-   with patch.object(ops.urllib.request,'urlopen',side_effect=RuntimeError('fixture')),patch.object(ops.subprocess,'check_output',return_value=b'true false'),patch.object(ops,'has_offsite',return_value=False):
+   with patch.object(ops.urllib.request,'urlopen',side_effect=RuntimeError('fixture')),patch.object(ops.subprocess,'check_output',return_value=b'true false'),patch.object(ops,'has_offsite',return_value=False),patch.object(ops,'pipeline_failures',return_value=[]):
     self.assertIn('No restore-verified backup in 36 hours',ops.checks())
+ def test_pipeline_errors_persist_until_success(self):
+  with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{"OPS_STATE_DIR":tmp},clear=False):
+   def metrics(error,success):return f'ipquality_compilations_total{{status="error"}} {error}\nipquality_compilations_total{{status="success"}} {success}\n'.encode()
+   with patch.object(ops.subprocess,'check_output',return_value=metrics(0,1)):
+    self.assertEqual(ops.pipeline_failures(),[])
+   with patch.object(ops.subprocess,'check_output',return_value=metrics(1,1)):
+    self.assertIn('Pipeline attempt failed: compile',ops.pipeline_failures())
+    self.assertIn('Pipeline attempt failed: compile',ops.pipeline_failures())
+   with patch.object(ops.subprocess,'check_output',return_value=metrics(1,2)):
+    self.assertEqual(ops.pipeline_failures(),[])
+ def test_first_pipeline_failure_after_an_empty_baseline_is_detected(self):
+  with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{"OPS_STATE_DIR":tmp},clear=False):
+   with patch.object(ops.subprocess,'check_output',return_value=b''):
+    self.assertEqual(ops.pipeline_failures(),[])
+   with patch.object(ops.subprocess,'check_output',return_value=b'ipquality_compilations_total{status="error"} 1\n'):
+    self.assertIn('Pipeline attempt failed: compile',ops.pipeline_failures())
  def test_malformed_backup_dates_are_not_candidates(self):
   self.assertIsNone(ops.stamp('20261301T000000Z-1'))
   self.assertIsNone(ops.stamp('../20260101T000000Z-1'))
