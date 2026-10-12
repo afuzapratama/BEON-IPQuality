@@ -351,6 +351,9 @@ components:
       - object
       - 'null'
       properties:
+        scoring_policy:
+          type: string
+          description: Versioned heuristic used to compile this snapshot; absent in legacy artifacts.
         version:
           type: string
         built_at:

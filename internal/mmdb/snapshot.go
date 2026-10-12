@@ -14,6 +14,7 @@ import (
 
 // SnapshotStatus describes the loaded artifact, independently of feed freshness.
 type SnapshotStatus struct {
+	ScoringPolicy      string                 `json:"scoring_policy,omitempty"`
 	FeedFreshnessKnown bool                   `json:"feed_freshness_known"`
 	Feeds              []models.FeedFreshness `json:"feeds,omitempty"`
 	Version            string                 `json:"version"`
@@ -73,6 +74,7 @@ func (r *Reader) snapshot(maxAge time.Duration, now time.Time) SnapshotStatus {
 		status.Stale = true
 		return status
 	}
+	status.ScoringPolicy = r.reputationDB.Metadata.Description["beon_scoring_policy"]
 	status.BuiltAt = time.Unix(int64(r.reputationDB.Metadata.BuildEpoch), 0).UTC()
 	age := now.Sub(status.BuiltAt)
 	status.AgeSeconds = max(0, age.Seconds())

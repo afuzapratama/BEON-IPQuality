@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -89,7 +91,7 @@ func TestPipelineWithPostgresRedisAndFixtureFeed(t *testing.T) {
 	cfg.MMDB.GeoLite2CityPath = ""
 	cfg.MMDB.GeoLite2ASNPath = filepath.Join(t.TempDir(), "asn.mmdb")
 	cfg.Ingestor.MaxRetries = 0
-	cfg.Scoring.RiskThreshold = 25
+	cfg.Scoring.RiskThreshold = 20
 	cfg.Scoring.Weights = map[string]int{"fixture": 20}
 	cfg.Scoring.ASNBonuses = map[string]int{"datacenter": 10}
 	asnTree, err := mmdbwriter.New(mmdbwriter.Options{DatabaseType: "GeoLite2-ASN", Description: map[string]string{"en": "Fixture ASN"}, RecordSize: 28, IPVersion: 6})
@@ -152,6 +154,24 @@ whitelist:
 	if err := comp.Compile(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// Disabled source must not leak unexpired DB rows into a new snapshot.
+	originalSnapshot, err := os.ReadFile(cfg.MMDB.OutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.MMDB.FeedsPath, []byte(strings.Replace(feedYAML, "enabled: true", "enabled: false", 1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := comp.Compile(ctx); err == nil {
+		t.Fatal("disabled-only source unexpectedly compiled a snapshot")
+	}
+	preserved, err := os.ReadFile(cfg.MMDB.OutputPath)
+	if err != nil || !bytes.Equal(preserved, originalSnapshot) {
+		t.Fatal("disabled-only compilation damaged the valid snapshot")
+	}
+	if err := os.WriteFile(cfg.MMDB.FeedsPath, []byte(feedYAML), 0600); err != nil {
+		t.Fatal(err)
+	}
 	reader, err := mmdb.NewReader(cfg.MMDB.OutputPath, "", cfg.MMDB.GeoLite2ASNPath)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +212,7 @@ whitelist:
 		return result
 	}
 	first := check("8.8.8.8")
-	if first.Score != 30 || !first.Risky || first.Cached || first.ASN == nil || first.ASN.ASNType != "datacenter" || !first.IsDatacenter {
+	if first.Score != 24 || !first.Risky || first.Cached || first.ASN == nil || first.ASN.ASNType != "datacenter" || !first.IsDatacenter {
 		t.Fatalf("configuration/ASN not applied: %+v", first)
 	}
 	if second := check("8.8.8.8"); !second.Cached || second.DataVersion != first.DataVersion {
@@ -291,7 +311,7 @@ whitelist:
 	}
 	// Disconnected Redis must leave the MMDB lookup usable.
 	redisCache.Close()
-	if fallback := check("8.8.8.10"); fallback.Cached || fallback.Score != 30 {
+	if fallback := check("8.8.8.10"); fallback.Cached || fallback.Score != 24 {
 		t.Fatalf("Redis outage did not fall back: %+v", fallback)
 	}
 	if _, err := db.Pool().Exec(ctx, `INSERT INTO feed_fetch_history(feed_name,source_url,status,created_at) VALUES ('retention-fixture','fixture','success',NOW()-INTERVAL '100 days'),('retention-fixture','fixture','success',NOW()-INTERVAL '50 days'),('retention-fixture','fixture','error',NOW()-INTERVAL '45 days')`); err != nil {

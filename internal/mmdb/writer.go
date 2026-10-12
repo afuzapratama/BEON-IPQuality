@@ -13,6 +13,7 @@ import (
 	"github.com/maxmind/mmdbwriter/inserter"
 	"github.com/maxmind/mmdbwriter/mmdbtype"
 
+	"github.com/lfrfrfr/beon-ipquality/internal/scoring"
 	"github.com/lfrfrfr/beon-ipquality/pkg/logger"
 	"github.com/lfrfrfr/beon-ipquality/pkg/models"
 )
@@ -57,6 +58,8 @@ func NewDefaultWriter() *Writer {
 
 // ReputationEntry represents a single entry to write
 type ReputationEntry struct {
+	Evidence      map[string]int
+	ScoreCap      int
 	RiskThreshold int
 	ASN           *models.ASNInfo
 	Prefix        netip.Prefix
@@ -102,6 +105,7 @@ func (w *Writer) CompileToMMDB(entries []ReputationEntry, outputPath string) err
 		}
 		description["beon_feed_freshness"] = string(data)
 	}
+	description["beon_scoring_policy"] = scoring.PolicyVersion
 	// Create MMDB writer
 	tree, err := mmdbwriter.New(mmdbwriter.Options{
 		DatabaseType:            w.config.DatabaseType,
@@ -204,6 +208,18 @@ func (w *Writer) entryToMMDBRecord(entry ReputationEntry) mmdbtype.DataType {
 		"is_attacker":    mmdbtype.Bool(entry.Flags.IsAttacker),
 	}
 
+	if entry.Evidence != nil {
+		evidence := mmdbtype.Map{}
+		for family, value := range entry.Evidence {
+			evidence[mmdbtype.String(family)] = mmdbtype.Uint16(value)
+		}
+		record["risk_evidence"] = evidence
+		cap := entry.ScoreCap
+		if cap <= 0 {
+			cap = 100
+		}
+		record["risk_max_score"] = mmdbtype.Uint16(cap)
+	}
 	if entry.ASN != nil {
 		record["asn"] = mmdbtype.Uint32(entry.ASN.ASN)
 		record["asn_org"] = mmdbtype.String(entry.ASN.Org)
@@ -258,12 +274,37 @@ func mergeReputationRecord(newValue mmdbtype.DataType) inserter.Func {
 
 		oldScore := uint16Value(existingMap, "risk_score")
 		newScore := uint16Value(newMap, "risk_score")
-		combinedScore := oldScore
-		if hasNewStrings(existingMap["sources"], newMap["sources"]) {
-			combinedScore = min(oldScore+newScore, 100)
-		} else if newScore > oldScore {
-			combinedScore = newScore
+		combinedScore := max(oldScore, newScore)
+		oldEvidence, oldOK := existingMap["risk_evidence"].(mmdbtype.Map)
+		newEvidence, newOK := newMap["risk_evidence"].(mmdbtype.Map)
+		if oldOK && newOK {
+			evidence := oldEvidence.Copy().(mmdbtype.Map)
+			for family, value := range newEvidence {
+				previous, _ := evidence[family].(mmdbtype.Uint16)
+				incoming, _ := value.(mmdbtype.Uint16)
+				if incoming > previous {
+					evidence[family] = incoming
+				}
+			}
+			values := make(map[string]int, len(evidence))
+			for family, value := range evidence {
+				v, _ := value.(mmdbtype.Uint16)
+				values[string(family)] = int(v)
+			}
+			cap := min(uint16Value(existingMap, "risk_max_score"), uint16Value(newMap, "risk_max_score"))
+			if cap == 0 {
+				cap = 100
+			}
+			combinedScore = uint16(scoring.ScoreEvidence(values, 0, int(cap)))
+			merged["risk_evidence"] = evidence
+			merged["risk_max_score"] = mmdbtype.Uint16(cap)
+		} else {
+			// Legacy records lack provenance. Retain the stronger score instead
+			// of adding scores that may already include the same source/ASN.
+			delete(merged, "risk_evidence")
+			delete(merged, "risk_max_score")
 		}
+
 		merged["risk_score"] = mmdbtype.Uint16(combinedScore)
 		merged["risk_level"] = mmdbtype.String(classifyRisk(int(combinedScore)))
 		if newScore >= oldScore {
@@ -277,27 +318,6 @@ func mergeReputationRecord(newValue mmdbtype.DataType) inserter.Func {
 		}
 		return merged, nil
 	}
-}
-
-func hasNewStrings(existing, incoming mmdbtype.DataType) bool {
-	seen := make(map[mmdbtype.String]struct{})
-	if values, ok := existing.(mmdbtype.Slice); ok {
-		for _, value := range values {
-			if text, ok := value.(mmdbtype.String); ok {
-				seen[text] = struct{}{}
-			}
-		}
-	}
-	if values, ok := incoming.(mmdbtype.Slice); ok {
-		for _, value := range values {
-			if text, ok := value.(mmdbtype.String); ok {
-				if _, exists := seen[text]; !exists {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 func boolValue(record mmdbtype.Map, key string) bool {

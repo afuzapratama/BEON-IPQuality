@@ -23,8 +23,8 @@ func TestConfiguredWeightsDecayCapAndASNBonuses(t *testing.T) {
 	}
 	threat.Source = "unconfigured"
 	threat.Weight = 50
-	if score := scorer.CalculateScore([]models.Threat{threat}, &models.ASNInfo{ASNType: "business"}, now); score != 50 {
-		t.Fatalf("ASN bonus ignored: %d", score)
+	if score := scorer.CalculateScore([]models.Threat{threat}, &models.ASNInfo{ASNType: "business"}, now); score != 46 {
+		t.Fatalf("bounded ASN context ignored: %d", score)
 	}
 	threat.LastSeen = now.Add(-10 * 24 * time.Hour)
 	if score := scorer.CalculateScore([]models.Threat{threat}, nil, now); score >= 10 {

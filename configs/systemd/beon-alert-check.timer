@@ -1,0 +1,8 @@
+[Unit]
+Description=BEON lightweight checks every minute
+[Timer]
+OnBootSec=2m
+OnUnitInactiveSec=1m
+AccuracySec=5s
+[Install]
+WantedBy=timers.target

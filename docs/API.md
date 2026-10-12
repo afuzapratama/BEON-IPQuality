@@ -40,7 +40,7 @@ Batas default 100 IP, sesuai `api.batch_max_size`. Input kosong, JSON salah, ata
 
 ## Health, statistik, dan administrasi
 
-- `/health`: 200 jika reader siap dan snapshot/source dalam anggaran, 503 bila unavailable/stale. JSON mencakup status, versi aplikasi, uptime, timestamp, services dan snapshot. Snapshot memuat build time/age, data version, freshness source, dan `feed_freshness_known`. Metadata unknown pada snapshot legacy tidak membuktikan feed fresh.
+- `/health`: 200 jika reader siap dan snapshot/source dalam anggaran, 503 bila unavailable/stale. JSON mencakup status, versi aplikasi, uptime, timestamp, services dan snapshot. Snapshot memuat scoring_policy (jika tersedia), build time/age, data version, freshness source, dan `feed_freshness_known`. Metadata unknown pada snapshot legacy tidak membuktikan feed fresh.
 - `/metrics`: text format Prometheus. Path dapat diubah lewat konfigurasi.
 - `/api/v1/stats`: total request/IP, rata-rata response time dan error rate sejak proses hidup. Counter reset saat restart; bukan billing analytics.
 - `/api/v1/cache/stats`: `enabled: false` jika caching off; jika aktif mengembalikan stats. Memory field saat ini belum diisi dan bernilai 0, bukan ukuran Redis yang terukur.

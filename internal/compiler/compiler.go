@@ -136,12 +136,18 @@ func (c *Compiler) Compile(ctx context.Context) (compileErr error) {
 	}
 
 	logger.Info(fmt.Sprintf("Fetched %d reputation entries from database", len(reputations)))
+	if len(reputations) == 0 {
+		return fmt.Errorf("no active reputation rows from enabled sources; retaining prior snapshot")
+	}
 
 	entries, err := c.aggregateReputations(reputations, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to aggregate reputation data: %w", err)
 	}
 
+	if len(entries) == 0 {
+		return fmt.Errorf("no usable reputation networks; refusing whitelist-only snapshot")
+	}
 	whitelists, err := c.fetchWhitelistData(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch whitelist data: %w", err)
@@ -173,6 +179,12 @@ func (c *Compiler) Compile(ctx context.Context) (compileErr error) {
 
 // fetchReputationData fetches all active reputation data from the database
 func (c *Compiler) fetchReputationData(ctx context.Context) ([]models.IPReputation, error) {
+	feeds, err := config.LoadFeeds(c.config.MMDB.FeedsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load active sources: %w", err)
+	}
+	enabled := enabledSourceIDs(feeds)
+
 	query := `
 		SELECT 
 			id,
@@ -189,10 +201,11 @@ func (c *Compiler) fetchReputationData(ctx context.Context) ([]models.IPReputati
 			last_seen
 		FROM ip_reputation
 		WHERE (expires_at IS NULL OR expires_at > NOW())
+ AND source = ANY($1::text[])
 		ORDER BY last_seen DESC
 	`
 
-	rows, err := c.db.Query(ctx, query)
+	rows, err := c.db.Query(ctx, query, enabled)
 	if err != nil {
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
@@ -303,6 +316,8 @@ func (c *Compiler) aggregateReputations(reputations []models.IPReputation, now t
 		entries = append(entries, mmdb.ReputationEntry{
 			Prefix:        aggregate.prefix,
 			RiskScore:     score,
+			Evidence:      c.scorer.Evidence(aggregate.threats, asn, now),
+			ScoreCap:      c.scorer.MaxScore(),
 			RiskThreshold: c.riskThreshold(),
 			RiskLevel:     c.scorer.ClassifyRisk(score),
 			ThreatType:    aggregate.primaryType,
@@ -483,4 +498,24 @@ func (c *Compiler) riskThreshold() int {
 		return c.config.Scoring.RiskThreshold
 	}
 	return 50
+}
+
+// enabledSourceIDs excludes removed/disabled sources even while their DB TTL is
+// still live, and accepts canonical and historic human-readable source IDs.
+func enabledSourceIDs(feeds *config.FeedsConfig) []string {
+	set := make(map[string]struct{})
+	for id, feed := range feeds.Feeds {
+		if !feed.Enabled {
+			continue
+		}
+		for _, source := range feed.Sources {
+			suffix := ""
+			if source.Name != "" {
+				suffix = "/" + source.Name
+			}
+			set[id+suffix] = struct{}{}
+			set[feed.Name+suffix] = struct{}{}
+		}
+	}
+	return mapKeys(set)
 }

@@ -5,7 +5,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/beon-ipquality/geoipupdate.env
+EnvironmentFile=-/etc/beon-ipquality/operations.env
 WorkingDirectory=/opt/beon-ipquality
-ExecStart=/opt/beon-ipquality/scripts/backup.sh
+ExecStart=/opt/beon-ipquality/scripts/backup-cycle.sh
 UMask=0077
 NoNewPrivileges=true

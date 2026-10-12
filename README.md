@@ -78,6 +78,8 @@ Respons lookup memakai field `score`/`risk_score`, `risk_level`, flag seperti `p
 
 ## Scoring, freshness, dan reload
 
+Policy `evidence-family-max-v1` memakai kontribusi terkuat per family anonymity/abuse/infrastructure; datacenter/ASN sendiri maksimum 20, overlap CIDR dihitung ulang dari evidence dan tidak menggandakan skor. Nilai ini heuristic, bukan probabilitas atau angka akurasi yang sudah terkalibrasi. Lihat [phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md).
+
 Compiler memakai `scoring.decay_lambda`, `max_score`, `weights`, `asn_bonuses`, dan `risk_threshold`. Bobot dapat memakai ID feed pada `configs/feeds.yaml` atau ID feed/source; override source mengalahkan override feed, lalu bobot tersimpan, lalu default threat type. Respons menambahkan `risky` sesuai threshold (whitelist selalu false) dan `data_version` yang mengidentifikasi reputasi, GeoIP, serta ASN yang dipakai. ASN type berasal dari `asn_info`; GeoLite2-ASN hanya memberi nomor/org. Prefix yang melintasi beberapa record ASN tidak diberi satu klasifikasi ASN. Daftar ASN bawaan masih contoh terbatas.
 
 Default compile 15 menit, pemeriksaan reload 5 menit, dan umur maksimum snapshot 1 jam. Freshness source memakai satu interval cron feed ditambah compile/reload dan anggaran retry HTTP. Feed harian tetap mempunyai anggaran lebih dari 24 jam; ini bukan janji semua feed diperbarui dalam satu jam. Waktu antre/storage/compile nyata perlu diukur pada pilot. `/health` menampilkan versi, build time, umur snapshot, timestamp sukses tiap source, dan status stale. Lookup dan health mengembalikan 503 saat snapshot/feed melewati anggaran. Snapshot legacy tanpa metadata feed menampilkan `feed_freshness_known: false`; bootstrap pipeline baru diperlukan untuk memantau tiap source.

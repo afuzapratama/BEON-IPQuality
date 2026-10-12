@@ -32,8 +32,8 @@ func TestAggregateReputationsCombinesSourcesAndThreats(t *testing.T) {
 	if len(entry.Sources) != 2 || len(entry.ThreatTypes) != 2 || !entry.Flags.IsTor || !entry.Flags.IsProxy {
 		t.Fatalf("signals were not aggregated: %#v", entry)
 	}
-	if entry.RiskScore <= 70 {
-		t.Fatalf("combined risk score = %d, want greater than single-source score", entry.RiskScore)
+	if entry.RiskScore != 70 {
+		t.Fatalf("combined risk score = %d, want strongest correlated anonymity signal", entry.RiskScore)
 	}
 }
 
@@ -84,5 +84,16 @@ func TestCompilerAcceptsReservedFeedNetworksAndLocalWhitelist(t *testing.T) {
 		if err != nil || !got.Whitelisted || got.Score != 0 {
 			t.Fatalf("%s: whitelist missing: %#v, %v", ip, got, err)
 		}
+	}
+}
+
+func TestEnabledSourcesExcludeDisabledAndRemovedSources(t *testing.T) {
+	feeds := &config.FeedsConfig{Feeds: map[string]config.FeedConfig{
+		"active":   {Enabled: true, Name: "Active Feed", Sources: []config.SourceConfig{{Name: "current"}}},
+		"disabled": {Enabled: false, Name: "Disabled Feed", Sources: []config.SourceConfig{{Name: "old"}}},
+	}}
+	ids := enabledSourceIDs(feeds)
+	if len(ids) != 2 || ids[0] != "Active Feed/current" || ids[1] != "active/current" {
+		t.Fatalf("source IDs: %v", ids)
 	}
 }
