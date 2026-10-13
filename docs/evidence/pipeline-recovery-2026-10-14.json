@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-14",
+  "runtime": {
+    "release": "v1.1.0-rc.8",
+    "health": "healthy",
+    "snapshot_stale": false,
+    "seconds": 8.633,
+    "postgres_redis_digests_preserved": true
+  },
+  "root_causes": [
+    "MMDB IPv4 aliases reject explicit 6to4 feed records; compiler stops publication",
+    "Large source expiry anti-join stalls updates; CLI timeout leaves container and PostgreSQL query",
+    "Optional GreenSnow upstream returns HTTP 503"
+  ],
+  "repairs": [
+    "Disable IPv4 aliasing in default and actual compiler writer",
+    "Timestamp generation marker after source lock; atomic upsert and expiry without staging anti-join",
+    "Named worker deadlines, targeted database-session termination and container cleanup",
+    "PostgreSQL cgroup raised from 512 to 1536 MiB on existing 8 GB host; no DB restart",
+    "GreenSnow quarantined; 32 sources remain enabled"
+  ],
+  "validation": {
+    "public_health_http": 200,
+    "snapshot_stale": false,
+    "source_count": 32,
+    "prometheus_targets_up": 5,
+    "prometheus_targets_total": 5,
+    "publisher_result": "success",
+    "publisher_exit_status": 0,
+    "publisher_wall_seconds": 142.367,
+    "compiler_wall_seconds": 34.251853403,
+    "repeat_account_ingest_rows": 999033,
+    "repeat_account_ingest_seconds": 86.426,
+    "alert_failures": 0,
+    "orphan_workers_remaining": 0
+  },
+  "limitations": "Previous indexed update (17m1s) and repeat marker update (86.426s) have different database/cache/publication state; not a controlled speedup ratio. Changed-dataset cycles and 24-48h stability still require observation."
+}

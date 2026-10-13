@@ -8,7 +8,7 @@ kedaluwarsa menghasilkan HTTP 503.
 ## Produksi
 
 Base URL: **https://ipproxy.beon-api.site**. Runtime memakai image digest
-[`v1.1.0-rc.7`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.7),
+[`v1.1.0-rc.8`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.8),
 source aplikasi dan konfigurasi host dikelola di `main`. VPS ARM64: 4 vCPU, RAM 8 GB, disk persisten 30 GB.
 NVMe Azure 220 GB hanya untuk staging sementara; data utama tetap persisten.
 
@@ -126,7 +126,7 @@ proxy, GeoIP dan validasi monitoring. Profil development opsional dijelaskan di
 
 ## Release dan pekerjaan tersisa
 
-`main` adalah branch source aktif; **release produksi tetap `v1.1.0-rc.7`**.
+`main` adalah branch source aktif; **release produksi tetap `v1.1.0-rc.8`**.
 Workflow release memberi label pre-release pada tag yang mengandung suffix seperti
 `-rc.4`. Merge source tidak mengganti tag atau image yang berjalan di VPS.
 
@@ -143,8 +143,10 @@ Tidak ada bobot scoring yang dituning tanpa bukti. Lihat [review label](docs/LAB
 [status phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md) dan
 [bukti operasional](docs/OPERATIONS_RC4_VALIDATION.md).
 Stable berikutnya direncanakan sebagai `v1.1.0` setelah scope/gate release ditutup;
-release lama `v1.0.0` tidak mencerminkan deployment rc.7 saat ini.
+release lama `v1.0.0` tidak mencerminkan deployment rc.8 saat ini.
 
 ## Lisensi
 
 [MIT](LICENSE). Lisensi kode tidak menggantikan ketentuan penggunaan setiap dataset.
+
+Pemulihan insiden 14 Oktober: [penyebab/perbaikan dan validasi](docs/evidence/pipeline-recovery-2026-10-14.json). Updater penuh lulus sekitar 2 menit 22 detik; ini satu siklus terverifikasi, bukan bukti stabilitas 48 jam.

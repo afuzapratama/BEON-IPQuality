@@ -410,3 +410,5 @@ diambil setelah advisory lock, seluruh row present mendapat marker itu, dan row
 source yang tidak mendapat marker di-expire dalam transaksi yang sama. Tidak ada
 anti-join ke staging lagi; source lain tidak diubah. Capture setelah lock menghindari
 transaction-NOW yang lebih tua daripada publisher yang selesai sebelumnya.
+
+Validasi akhir rc.8: API HTTPS 200/fresh, updater systemd exit 0 (142,367 detik lengkap), compile 34,252 detik, 5/5 target scrape UP, checker alert failures=0, tanpa worker orphan. [Evidence](evidence/pipeline-recovery-2026-10-14.json). Benchmark ulang memakai snapshot/keadaan cache berbeda, sehingga bukan klaim rasio speedup terkontrol atau penutupan gate 24–48 jam.

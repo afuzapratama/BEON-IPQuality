@@ -79,3 +79,7 @@ ada. Setelah API berjalan, refresh penuh dan aktifkan timer.
 Cap compiler aktual 2.560 MiB, Go target 1.800 MiB pada VPS 4 vCPU/8 GB. Pilot
 terkurasi + akun telah diuji; jangan mengaktifkan seluruh default feed jutaan baris
 berdasarkan angka ini saja. Source/DB/secrets tetap persisten di disk OS.
+
+## Penanganan timeout — 14 Oktober 2026
+
+Worker ingest mempunyai deadline 30 menit dan compiler 15 menit; unit keseluruhan 60 menit. Worker memakai nama container unik. Saat timeout, koneksi PostgreSQL dari IP container yang masih dimiliki job dihentikan sebelum container dibuang, sehingga query tidak tertinggal. Expiry source sekarang memakai marker timestamp publikasi DB setelah source lock, di dalam transaksi yang sama dengan upsert; tidak memakai anti-join jutaan row. Batas freshness tidak dilonggarkan. PG cache cap pilot 512 MiB dinaikkan ke 1.536 MiB pada VPS 8 GB. Validasi satu job systemd sukses lengkap 2 menit 22 detik; siklus dataset berubah masih perlu dipantau.
