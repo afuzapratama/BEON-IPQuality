@@ -1,1 +1,1 @@
-{"failures": 1, "incident": false, "last_alert": 0, "checked_at": 1791852839.1681914, "healthy": false}
+{"failures": 2, "incident": true, "last_alert": 1791855550.7050095, "checked_at": 1791855550.7050095, "healthy": false}
