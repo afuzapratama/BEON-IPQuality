@@ -76,7 +76,9 @@ jobs:
       - name: Backup retention, integrity and notification guards
         run: python -m unittest discover -s tests/operations -v
       - name: Scoring evaluation and label review guards
-        run: python -m unittest discover -s tests/scoring -v
+        run: |
+          pip install PyYAML==6.0.3
+          python -m unittest discover -s tests/scoring -v
       - name: Validate OpenAPI contract
         run: |
           pip install openapi-spec-validator==0.9.0
