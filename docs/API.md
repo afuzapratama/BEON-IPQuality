@@ -6,10 +6,12 @@ Spesifikasi mesin: [OpenAPI 3.1](openapi.yaml). Kontrak ini menggambarkan API de
 
 | Route | Key | Akses VPS |
 | --- | --- | --- |
-| `/api/v1/check/:ip`, `/api/v1/check/batch` | `X-API-Key: API_KEY` | Melalui Nginx HTTPS |
-| `/api/v1/stats` | `API_KEY` | Internal pada konfigurasi Nginx produksi |
-| `/api/v1/cache/stats`, `DELETE /api/v1/cache`, `POST /api/v1/reload` | `X-API-Key: ADMIN_API_KEY` | Loopback/SSH; key berbeda dari lookup |
-| `/health`, `/metrics` | Tanpa key | Loopback/SSH; tidak diproxy ke publik |
+| `/api/v1/check/:ip`, `/api/v1/check/batch` | `X-API-Key: API_KEY` | HTTPS publik + API key |
+| `/api/v1/stats` | `API_KEY` | HTTPS publik + API key |
+| `/api/v1/cache/stats`, `DELETE /api/v1/cache`, `POST /api/v1/reload` | `X-API-Key: ADMIN_API_KEY` | HTTPS publik + admin key terpisah |
+| `/health` | Tanpa key | HTTPS publik untuk readiness/uptime |
+| `/metrics` | Tanpa key internal | Hanya jaringan internal; HTTPS publik 403 |
+| `/grafana/` | Login Grafana | HTTPS publik dengan autentikasi operator |
 
 Key admin kosong menonaktifkan route admin dengan 404 text/plain. Key lookup tidak dapat menjalankan operasi admin. Limiter lookup menggunakan hash key setelah autentikasi; default 1.000 request/menit, configurable. Health/metrics tidak memakai kuota lookup. Nilai `API_KEY` tidak boleh ditanam di frontend browser.
 
@@ -62,7 +64,7 @@ Mayoritas error aplikasi berbentuk `{"error":"code","message":"detail"}`. Error 
 
 ## Dataset akun privat dan waktu pembaruan
 
-Runtime VPS saat ini rc.4, source akun Avastel aktif pada API berkey. Snapshot
+Runtime VPS saat ini rc.6, source akun Avastel aktif pada API berkey. Snapshot
 reputasi tetap lokal; API lookup tidak memanggil Avastel per request. Publisher
 memperbarui dataset setiap 7 jam dan sesudah boot untuk recovery. Hanya row
 isProxy=True masuk source proxy; metadata ASN/GeoIP tetap dari pipeline yang

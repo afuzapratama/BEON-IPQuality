@@ -12,7 +12,8 @@ Stack terpisah dari aplikasi menggunakan `deployments/compose.monitoring.yml`,
 network external `beon-ipquality_beon`, image multiarch dengan digest, serta volume
 persisten Docker pada disk OS. Jangan memakai NVMe sementara untuk histori yang
 harus dipertahankan. Port Prometheus 9090 dan Grafana 3000 hanya loopback;
-node exporter tidak mempunyai published port. HTTPS `/metrics` ditolak 403.
+node exporter memakai host network/PID untuk mengukur trafik host sebenarnya,
+tetapi bind hanya ke gateway Docker privat pada port 9100. HTTPS `/metrics` ditolak 403.
 Grafana anonymous access dan metrics Grafana dinonaktifkan; form login tetap aktif.
 
 ```bash
@@ -30,6 +31,8 @@ Budget container: Prometheus 512 MiB, Grafana 512 MiB, exporter 64 MiB.
 Retention tujuh hari atau target 2 GB, mana yang lebih dahulu; WAL/compaction
 membutuhkan ruang tambahan sehingga ini bukan quota disk keras. Exporter memakai
 mount host /proc, /sys dan root secara readonly, tanpa Docker socket.
+BEON_GATEWAY harus sesuai IPAM gateway network aplikasi; container bridge biasa
+akan mengukur trafik network namespace container, bukan trafik host.
 
 Grafana memakai plugin Prometheus yang sudah ada pada image. Plugin preinstall,
 auto-update dan instalasi melalui UI dimatikan supaya image readonly tetap
@@ -63,3 +66,7 @@ Audit live menemukan label HTTP Prometheus memakai string method pinjaman dari
 buffer fasthttp. Method POST lalu GET dapat mengubah label menjadi GETT dan
 membuat gather metrik gagal 500. Perbaikan menyalin label menjadi string milik
 collector, dengan regresi reuse RequestCtx; perubahan ini memerlukan runtime baru.
+
+Runtime aplikasi mengikuti digest release. Konfigurasi monitoring host mengikuti revision support yang dicatat pada VPS dan source `main`; perubahan host support tidak selalu memerlukan rebuild image aplikasi. Gunakan konfigurasi monitoring dari revision support terbaru, bukan menyalin snapshot awal monitoring dari archive release lama.
+
+Validasi akhir: rc.6 healthy/fresh; enam route authenticated 200; metrics internal 200 setelah GET/POST/DELETE, publik 403; 5/5 scrape target UP; login dan 16 query dashboard lulus. Stack teramati sekitar 234 MiB RAM pada satu pemeriksaan. Rollout pertama kembali ke rc.4 karena lima source stale; refresh reguler + compile memperbarui snapshot sebelum retry rc.6 lulus. Prosedur rollout harus memastikan source/snapshot fresh sebelum recreating API; rollback image tidak memperbarui metadata feed yang sudah tua.

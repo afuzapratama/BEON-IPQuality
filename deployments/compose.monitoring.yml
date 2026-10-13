@@ -9,11 +9,12 @@ x-runtime: &runtime
   logging:
     driver: json-file
     options: {max-size: 10m, max-file: '3'}
-  networks: [beon]
 
 services:
   prometheus:
     <<: *runtime
+    networks: [beon]
+    extra_hosts: ["host.docker.internal:${BEON_GATEWAY:-172.18.0.1}"]
     image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     mem_limit: 512m
     environment: {GOMEMLIMIT: 384MiB}
@@ -29,6 +30,7 @@ services:
       - prometheus_data:/prometheus
   grafana:
     <<: *runtime
+    networks: [beon]
     image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     mem_limit: 512m
     environment:
@@ -61,9 +63,12 @@ services:
     depends_on: [prometheus]
   node-exporter:
     <<: *runtime
+    network_mode: host
+    pid: host
     image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
     mem_limit: 64m
     command:
+      - --web.listen-address=${BEON_GATEWAY:-172.18.0.1}:9100
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/host/root
