@@ -37,13 +37,19 @@ func (db *PostgresDB) ReplaceReputationSource(ctx context.Context, source string
 	if err != nil {
 		return 0, fmt.Errorf("stage source: %w", err)
 	}
+	// Capture a generation marker after the source lock, not transaction NOW().
+	// Every present row receives this exact marker; expiry needs no million-row join.
+	var publishedAt time.Time
+	if err := tx.QueryRow(ctx, "SELECT clock_timestamp()").Scan(&publishedAt); err != nil {
+		return 0, fmt.Errorf("source publication marker: %w", err)
+	}
 	result, err := tx.Exec(ctx, `INSERT INTO ip_reputation (ip_start,ip_end,cidr,source,threat_type,confidence,weight,first_seen,last_seen,expires_at)
- SELECT DISTINCT ON (ip_start,ip_end) ip_start::inet,ip_end::inet,cidr::cidr,$1,threat_type,confidence,weight,NOW(),NOW(),$2 FROM beon_feed_stage ORDER BY ip_start,ip_end
- ON CONFLICT (ip_start,ip_end,source) DO UPDATE SET cidr=EXCLUDED.cidr,threat_type=EXCLUDED.threat_type,confidence=EXCLUDED.confidence,weight=EXCLUDED.weight,last_seen=EXCLUDED.last_seen,expires_at=EXCLUDED.expires_at`, source, expiry)
+ SELECT DISTINCT ON (ip_start,ip_end) ip_start::inet,ip_end::inet,cidr::cidr,$1,threat_type,confidence,weight,$3,$3,$2 FROM beon_feed_stage ORDER BY ip_start,ip_end
+ ON CONFLICT (ip_start,ip_end,source) DO UPDATE SET cidr=EXCLUDED.cidr,threat_type=EXCLUDED.threat_type,confidence=EXCLUDED.confidence,weight=EXCLUDED.weight,last_seen=EXCLUDED.last_seen,expires_at=EXCLUDED.expires_at`, source, expiry, publishedAt)
 	if err != nil {
 		return 0, fmt.Errorf("publish source: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE ip_reputation r SET expires_at=NOW() WHERE source=$1 AND (expires_at IS NULL OR expires_at>NOW()) AND NOT EXISTS (SELECT 1 FROM beon_feed_stage s WHERE s.ip_start::inet=r.ip_start AND s.ip_end::inet=r.ip_end)`, source); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE ip_reputation SET expires_at=$2 WHERE source=$1 AND (expires_at IS NULL OR expires_at>$2) AND last_seen IS DISTINCT FROM $2`, source, publishedAt); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {

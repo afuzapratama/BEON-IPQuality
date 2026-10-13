@@ -37,7 +37,7 @@ func DefaultWriterConfig() WriterConfig {
 		RecordSize:          28,
 		IPVersion:           0, // Both IPv4 and IPv6
 		IncludeReservedNets: false,
-		DisableIPv4Aliasing: false,
+		DisableIPv4Aliasing: true, // Feed IPv6 records must not alias IPv4 reputations.
 	}
 }
 

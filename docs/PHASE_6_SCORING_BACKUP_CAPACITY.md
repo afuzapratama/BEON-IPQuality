@@ -384,3 +384,31 @@ Akurasi independen, sustained-load/disk growth dan RTO provisioning/DNS/TLS masi
 terbuka; tidak ada stable tag yang diterbitkan dengan klaim gate tersebut selesai.
 
 [Evidence monitoring rc.6](evidence/production-monitoring-2026-10-13.json): lima target UP, 16 query Grafana valid, login dan isolasi metrics lulus. Seluruh enam route API/admin kembali diuji 200. Internal metrics tetap 200 setelah campuran method yang sebelumnya merusak label. Rollout final healthy/fresh, 9,475 detik; PG/Redis digest dipertahankan. Percobaan rollout pertama gagal health gate akibat source stale dan rollback; snapshot disegarkan sebelum retry, bukan dengan melonggarkan freshness budget.
+
+### Insiden pipeline 14 Oktober 2026
+
+Compiler menolak IPv6 6to4 yang berada dalam alias IPv4 MMDB; satu record membuat
+seluruh publikasi gagal dan snapshot lama melewati freshness budget. Writer produksi
+kini menonaktifkan alias otomatis agar record IPv4/IPv6 eksplisit tetap independen.
+Regresi mencakup IPv4, 6to4 dan Teredo serta factory writer produksi.
+
+Updater timeout setelah 600 detik meninggalkan container/transaction tetap berjalan.
+Query expiry source besar memakai staging tanpa index/statistik. Staging sekarang
+memiliki index expression inet dan ANALYZE. Worker publisher dinamai, timeout ingest
+30 menit/compile 15 menit dan container miliknya dihapus saat timeout; unit mempunyai
+budget keseluruhan 60 menit. Freshness budget tetap sama.
+
+GreenSnow sedang HTTP 503 dan dikarantina dari profil ARM produksi: sinyalnya tidak
+ikut compile, bukan dianggap fresh. Aktifkan kembali setelah upstream sehat dan
+refresh sukses. Jangan memakai retry manual saja sebagai bukti stabilitas 24–48 jam.
+
+PostgreSQL pada VPS 8 GB masih memakai cap pilot 512 MiB; cap dinaikkan ke 1.536 MiB tanpa restart DB untuk memberi headroom cache pada update massal. Worker timeout juga menghentikan koneksi PostgreSQL yang berasal dari IP container miliknya sebelum container dihapus; close Docker CLI/container saja tidak menjamin query server berhenti. Runtime rc.7 dan host support revision dipantau terpisah.
+
+Percobaan index staging rc.7 masih memerlukan 17 menit untuk update account penuh
+pada disk produksi. Expiry kemudian diganti dengan marker generasi: timestamp DB
+diambil setelah advisory lock, seluruh row present mendapat marker itu, dan row
+source yang tidak mendapat marker di-expire dalam transaksi yang sama. Tidak ada
+anti-join ke staging lagi; source lain tidak diubah. Capture setelah lock menghindari
+transaction-NOW yang lebih tua daripada publisher yang selesai sebelumnya.
+
+Validasi akhir rc.8: API HTTPS 200/fresh, updater systemd exit 0 (142,367 detik lengkap), compile 34,252 detik, 5/5 target scrape UP, checker alert failures=0, tanpa worker orphan. [Evidence](evidence/pipeline-recovery-2026-10-14.json). Benchmark ulang memakai snapshot/keadaan cache berbeda, sehingga bukan klaim rasio speedup terkontrol atau penutupan gate 24–48 jam.

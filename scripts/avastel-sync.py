@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import http.server
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -19,9 +20,36 @@ ROOT=Path(os.environ.get('PROJECT_ROOT','/opt/beon-ipquality'))
 DATA=ROOT/'data/avastel'
 
 
-def compose(*args):
+def compose(*args, timeout=600):
     subprocess.run(['docker','compose','--env-file',str(ROOT/'.env'),'--env-file',str(ROOT/'deployment-lock.env'),
-                    '-f',str(ROOT/'deployments/compose.production.yml'),*args],cwd=ROOT,check=True,timeout=600,stdin=subprocess.DEVNULL)
+                    '-f',str(ROOT/'deployments/compose.production.yml'),*args],cwd=ROOT,check=True,timeout=timeout,stdin=subprocess.DEVNULL)
+
+
+def worker(service, *args, timeout):
+    name = 'beon-avastel-' + service + '-' + str(os.getpid())
+    try:
+        compose('run','--rm','--name',name,'--no-deps',service,*args,timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Killing the CLI does not stop its container or PostgreSQL transaction.
+        try:
+            networks = json.loads(subprocess.check_output(
+                ['docker','inspect','--format','{{json .NetworkSettings.Networks}}',name],
+                timeout=10,stderr=subprocess.DEVNULL))
+            addresses = [str(ipaddress.ip_address(n['IPAddress'])) for n in networks.values() if n.get('IPAddress')]
+            if addresses:
+                # Container removal alone may leave a server query running until completion.
+                # Cancel only connections from this still-owned container's private addresses.
+                literals = ','.join("'" + address + "'::inet" for address in addresses)
+                sql = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE backend_type='client backend' AND client_addr IN (" + literals + ") AND pid <> pg_backend_pid();"
+                compose('exec','-T','postgres','sh','-c',
+                        'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "$1"',
+                        'psql',sql,timeout=30)
+        except (subprocess.SubprocessError,ValueError,KeyError):
+            pass
+        finally:
+            subprocess.run(['docker','rm','-f',name],check=False,timeout=30,
+                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        raise
 
 
 def refresh(prepare_only=False):
@@ -50,12 +78,12 @@ def refresh(prepare_only=False):
             if link.is_symlink():link.unlink()
             link.symlink_to(destination.name,target_is_directory=True)
             os.replace(link,DATA/'current')
-            compose('run','--rm','--no-deps','ingestor','-config','/app/configs/config.yaml',
-                    '-feeds','/app/configs/feeds.avastel-publisher.yaml','-once')
+            worker('ingestor','-config','/app/configs/config.yaml',
+                    '-feeds','/app/configs/feeds.avastel-publisher.yaml','-once',timeout=1800)
             if prepare_only:
                 print('Account source prepared in PostgreSQL; bootstrap may continue.')
                 return
-            compose('run','--rm','--no-deps','compiler','-config','/app/configs/config.yaml','-oneshot')
+            worker('compiler','-config','/app/configs/config.yaml','-oneshot',timeout=900)
             subprocess.run(['docker','compose','--env-file',str(ROOT/'.env'),'--env-file',str(ROOT/'deployment-lock.env'),
                             '-f',str(ROOT/'deployments/compose.production.yml'),'exec','-T','api','sh','-c',
                             'wget -qO- --header="X-API-Key: $ADMIN_API_KEY" --post-data="" http://127.0.0.1:8080/api/v1/reload'],
@@ -63,7 +91,7 @@ def refresh(prepare_only=False):
             cleanup_sql = "DELETE FROM ip_reputation WHERE source IN ('Avastel Account/normalized_account','avastel_account/normalized_account') AND expires_at <= NOW() AND last_seen < NOW() - INTERVAL '24 hours';"
             compose('exec','-T','postgres','sh','-c',
                     'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"',
-                    'psql','-c',cleanup_sql)
+                    'psql','-c',cleanup_sql,timeout=180)
             (DATA/'last-published.json').write_text(json.dumps({'published_at':datetime.now(timezone.utc).isoformat(),
                          'source_sha256':json.loads((destination/'manifest.json').read_text())['normalized_sha256']})+'\n')
             for old in DATA.glob('snapshot-*'):
