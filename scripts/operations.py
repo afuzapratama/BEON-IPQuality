@@ -265,10 +265,21 @@ def checks():
     except Exception:
         problems.append("API health or feed/snapshot freshness failed")
     project = os.environ.get("COMPOSE_PROJECT_NAME", "beon-ipquality")
-    for service in ["api", "postgres", "redis", "ingestor", "compiler"]:
+    containers = [(project + "-" + service + "-1", service) for service in ["api", "postgres", "redis", "ingestor", "compiler"]]
+    if os.environ.get("MONITORING_ENABLED", "false").lower() == "true":
+        containers += [("beon-monitoring-" + service + "-1", service) for service in ["prometheus", "grafana", "node-exporter"]]
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:9090/api/v1/targets", timeout=8) as response:
+                targets = json.load(response)["data"]["activeTargets"]
+            expected = {"prometheus", "ipquality-api", "ipquality-ingestor", "ipquality-compiler", "node"}
+            if {t["labels"].get("job") for t in targets if t.get("health") == "up"} != expected:
+                problems.append("Monitoring scrape targets incomplete or down")
+        except Exception:
+            problems.append("Prometheus target health unavailable")
+    for name, service in containers:
         try:
             output = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Running}} {{.State.OOMKilled}}",
-                                              project + "-" + service + "-1"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+                                              name], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
             if output != "true false":
                 problems.append(service + " container down or OOM")
         except Exception:

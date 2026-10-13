@@ -73,3 +73,7 @@ proxy berbeda dari risky; proxy-only biasanya score 32, evidence family lain
 dapat menaikkan skor. Uji 100 record teringest adalah integration, bukan holdout.
 [Runbook akun](AVASTEL_PRIVATE_PRODUCTION.md) dan
 [alur review label](LABEL_REVIEW_WORKFLOW.md).
+
+## Kebijakan akses produksi — 13 Oktober 2026
+
+Route lookup/stats aktif melalui HTTPS dengan API key, cache/reload dengan admin key. `/metrics` kini internal: HTTPS publik mengembalikan 403, sedangkan Prometheus mengambil langsung `api:8080/metrics`. Grafana ada di `/grafana/` dengan login operator. `/health` tetap publik untuk readiness dan uptime eksternal. Tabel di README menjadi ringkasan akses produksi terbaru; catatan akses metrics publik sebelumnya adalah kondisi historis.

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -228,8 +229,11 @@ func HTTPMiddleware() fiber.Handler {
 		if endpoint == "" {
 			endpoint = "unmatched"
 		}
-		HTTPRequestsTotal.WithLabelValues(c.Method(), endpoint, strconv.Itoa(status)).Inc()
-		HTTPRequestDuration.WithLabelValues(c.Method(), endpoint).Observe(duration.Seconds())
+		// Fiber method strings borrow fasthttp buffers; Prometheus retains labels.
+		method := strings.Clone(c.Method())
+		endpoint = strings.Clone(endpoint)
+		HTTPRequestsTotal.WithLabelValues(method, endpoint, strconv.Itoa(status)).Inc()
+		HTTPRequestDuration.WithLabelValues(method, endpoint).Observe(duration.Seconds())
 		totalRequests.Add(1)
 		totalDurationNS.Add(duration.Nanoseconds())
 		if status >= 400 || err != nil {

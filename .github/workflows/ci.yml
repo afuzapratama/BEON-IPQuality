@@ -85,6 +85,8 @@ jobs:
           python -m openapi_spec_validator docs/openapi.yaml
       - name: Nginx HTTPS configuration syntax
         run: ./tests/ops/test-nginx.sh
+      - name: Production monitoring and Caddy configuration
+        run: ./tests/ops/test-monitoring.sh
       - name: GeoIP paths with fixture executable
         run: ./tests/ops/test-geoip.sh
       - name: Build fixture service images

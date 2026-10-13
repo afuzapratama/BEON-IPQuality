@@ -1,0 +1,83 @@
+name: beon-monitoring
+
+x-runtime: &runtime
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+  networks: [beon]
+
+services:
+  prometheus:
+    <<: *runtime
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    mem_limit: 512m
+    environment: {GOMEMLIMIT: 384MiB}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=2GB
+      - --query.max-concurrency=4
+    ports: ['127.0.0.1:9090:9090']
+    volumes:
+      - ${PROJECT_ROOT:-/opt/beon-ipquality}/configs/prometheus/production.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+  grafana:
+    <<: *runtime
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    mem_limit: 512m
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-beonadmin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set private Grafana password}
+      GF_SECURITY_SECRET_KEY: ${GRAFANA_SECRET_KEY:?set private Grafana secret key}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://ipproxy.beon-api.site/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+      GF_SECURITY_COOKIE_SECURE: 'true'
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_DISABLE_LOGIN_FORM: 'false'
+      GF_AUTH_BASIC_ENABLED: 'false'
+      GF_SECURITY_DISABLE_GRAVATAR: 'true'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: 'false'
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: 'false'
+      GF_METRICS_ENABLED: 'false'
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: 'false'
+      GF_LOG_MODE: console
+      GF_UNIFIED_ALERTING_ENABLED: 'false'
+    ports: ['127.0.0.1:3000:3000']
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ${PROJECT_ROOT:-/opt/beon-ipquality}/configs/grafana/production:/etc/grafana/provisioning:ro
+      - ${PROJECT_ROOT:-/opt/beon-ipquality}/configs/grafana/dashboards/production.json:/var/lib/grafana/dashboards/production.json:ro
+    depends_on: [prometheus]
+  node-exporter:
+    <<: *runtime
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    mem_limit: 64m
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($|/)
+      - --collector.netdev.device-exclude=^(veth.*|docker.*|br-.*|lo)$
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+
+networks:
+  beon:
+    external: true
+    name: ${BEON_NETWORK:-beon-ipquality_beon}
+volumes:
+  prometheus_data:
+  grafana_data:
