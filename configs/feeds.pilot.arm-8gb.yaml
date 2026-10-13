@@ -233,7 +233,7 @@ feeds:
       format: plain_comments
       name: ipsum_level4
   greensnow:
-    enabled: false # Quarantined: upstream HTTP 503 on 2026-10-14
+    enabled: true # Retry on schedule; failed fetches preserve the last valid snapshot
     name: GreenSnow Blocklist
     description: Team Cymru & GreenSnow threat data
     threat_type: attack

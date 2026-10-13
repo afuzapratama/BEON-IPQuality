@@ -412,3 +412,7 @@ anti-join ke staging lagi; source lain tidak diubah. Capture setelah lock menghi
 transaction-NOW yang lebih tua daripada publisher yang selesai sebelumnya.
 
 Validasi akhir rc.8: API HTTPS 200/fresh, updater systemd exit 0 (142,367 detik lengkap), compile 34,252 detik, 5/5 target scrape UP, checker alert failures=0, tanpa worker orphan. [Evidence](evidence/pipeline-recovery-2026-10-14.json). Benchmark ulang memakai snapshot/keadaan cache berbeda, sehingga bukan klaim rasio speedup terkontrol atau penutupan gate 24–48 jam.
+
+### GreenSnow dipulihkan — 2026-10-14
+
+Endpoint resmi tetap `https://blocklist.greensnow.co/greensnow.txt`. Pemeriksaan lokal dan VPS, termasuk User-Agent ingestor, kembali HTTP 200 dengan IP valid. Profil ARM mengaktifkan kembali GreenSnow pada jadwal `@hourly`. Ingestor yang ada sudah melakukan retry terbatas dan melanjutkan sumber lain setelah kegagalan. Respons non-200, body kosong, atau parse gagal tidak mengganti snapshot maupun memperbarui last-success. Siklus berikutnya mencoba lagi; data lama tetap mengikuti expiry dan freshness budget asli. Error tetap dicatat dan dipantau, tidak dianggap sukses untuk menyembunyikan data stale. Bukti karantina rc.8 di atas merupakan riwayat insiden, bukan konfigurasi aktif setelah pemulihan ini.
