@@ -1,0 +1,30 @@
+{
+  "dashboard_panels": 16,
+  "scrape_targets": 5,
+  "all_targets_up": true,
+  "login_passed": true,
+  "promql_queries_valid": 16,
+  "public_checks": {
+    "/metrics": 403,
+    "/metrics/": 403,
+    "/grafana/api/search": 401,
+    "/grafana/api/dashboards/uid/beon-production": 401,
+    "/api/v1/stats": 401,
+    "/health": 200,
+    "/": 200
+  },
+  "scope": "Live ARM Grafana session and Prometheus targets; no credentials or raw IP data recorded",
+  "runtime_release": "v1.1.0-rc.6",
+  "runtime_rollout": {
+    "release": "v1.1.0-rc.6",
+    "health": "healthy",
+    "snapshot_stale": false,
+    "seconds": 9.475,
+    "postgres_redis_digests_preserved": true
+  },
+  "internal_metrics_status_after_mixed_methods": 200,
+  "authenticated_api_routes_tested": 6,
+  "authenticated_api_routes_successful": 6,
+  "node_network_scope": "Host network and PID; bind only private Docker gateway 172.18.0.1:9100",
+  "release_ci": "https://github.com/afuzapratama/BEON-IPQuality/actions/runs/38368200827"
+}

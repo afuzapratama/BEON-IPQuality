@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+scrape_configs:
+  - job_name: prometheus
+    static_configs: [{targets: ['localhost:9090']}]
+  - job_name: ipquality-api
+    static_configs: [{targets: ['api:8080']}]
+  - job_name: ipquality-ingestor
+    static_configs: [{targets: ['ingestor:9091']}]
+  - job_name: ipquality-compiler
+    static_configs: [{targets: ['compiler:9092']}]
+  - job_name: node
+    static_configs: [{targets: ['host.docker.internal:9100']}]

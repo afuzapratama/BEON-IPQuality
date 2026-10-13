@@ -59,3 +59,7 @@ sudah siap. Accuracy gate tetap terbuka sampai cohort/prediksi holdout tersedia.
 Restore Bunny ke host terpisah sudah lulus (129,334 detik setelah decrypt/extract);
 lihat [runbook dan evidence](DISASTER_RECOVERY_DRILL.md). RTO end-to-end termasuk
 provisioning/DNS/TLS, sustained/high-load SLO dan disk growth masih perlu pengukuran. Analytics/history stack berat tidak diaktifkan pada pilot privat ini.
+
+## Pembaruan runtime rc.6
+
+Runtime rc.4 diganti rc.6 pada 13 Oktober 2026 untuk memperbaiki label method HTTP Prometheus yang meminjam buffer Fiber. Dashboard dan isolasi endpoint monitoring sekarang aktif; [runbook](PRODUCTION_MONITORING.md) dan [evidence](evidence/production-monitoring-2026-10-13.json). Catatan rc4 di atas tetap merupakan hasil drill historis; bukan klaim runtime sekarang masih rc4.

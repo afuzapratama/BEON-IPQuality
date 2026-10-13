@@ -357,3 +357,30 @@ verify MMDB, health/auth/IPv6/whitelist serta account lookup. Ini tidak mengukur
 provisioning OS atau pemulihan DNS/TLS dari kehilangan VPS.
 
 Hasil drill 13 Oktober 2026: backup Bunny `20261012T234730Z-20383`, restore 1.287.574 rows, migrasi/refresh/compile/verify lulus, API healthy dan 25 account samples, auth/IPv6/whitelist lulus. Durasi 129,334 detik setelah download/decrypt/extract; cleanup project uji lulus. [Evidence](evidence/phase6-bunny-disaster-restore-2026-10-13.json).
+
+### Monitoring produksi dan audit endpoint — 13 Oktober 2026
+
+Prometheus/Grafana/node exporter diaktifkan melalui Compose terpisah, image
+multiarch digest-pinned. Grafana di `/grafana/` memakai login; `/metrics` publik
+403, scrape API/pipeline/server melalui jaringan internal. Node exporter memakai
+host network/PID dan bind hanya gateway Docker privat agar trafik yang diukur
+adalah trafik VPS. Dashboard memiliki 16 panel. Prometheus retention 7 hari /
+target 2 GB plus headroom WAL, memory cap 512 MiB; Grafana 512 MiB/exporter 64 MiB.
+Credential monitoring ikut backup terenkripsi; histori TSDB/user preferences
+Grafana belum termasuk backup aplikasi. [Runbook](PRODUCTION_MONITORING.md).
+
+Audit API authenticated membuktikan semua enam route lookup/admin aktif dan 200.
+README diringkas sesuai produksi, tanpa catatan deployment historis yang tumpang
+tindih. Caddy dan template Nginx menyediakan route API yang sama; GET/POST/DELETE
+dan key role tetap dibedakan.
+
+Aktivasi scrape menemukan bug label method Fiber: buffer request yang dipakai ulang
+mengubah POST menjadi GETT pada label Prometheus dan menyebabkan gather 500.
+Label disalin sebelum disimpan; regression RequestCtx reuse gagal pada kode lama,
+lulus pada perbaikan. Runtime perbaikan diterbitkan sebagai `v1.1.0-rc.6`.
+Konfigurasi host mengikuti revision support terkini, terpisah dari digest runtime.
+Source `main`, runtime release dan status stable adalah hal yang berbeda.
+Akurasi independen, sustained-load/disk growth dan RTO provisioning/DNS/TLS masih
+terbuka; tidak ada stable tag yang diterbitkan dengan klaim gate tersebut selesai.
+
+[Evidence monitoring rc.6](evidence/production-monitoring-2026-10-13.json): lima target UP, 16 query Grafana valid, login dan isolasi metrics lulus. Seluruh enam route API/admin kembali diuji 200. Internal metrics tetap 200 setelah campuran method yang sebelumnya merusak label. Rollout final healthy/fresh, 9,475 detik; PG/Redis digest dipertahankan. Percobaan rollout pertama gagal health gate akibat source stale dan rollback; snapshot disegarkan sebelum retry, bukan dengan melonggarkan freshness budget.
