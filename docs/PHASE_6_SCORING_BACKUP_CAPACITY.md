@@ -403,3 +403,10 @@ ikut compile, bukan dianggap fresh. Aktifkan kembali setelah upstream sehat dan
 refresh sukses. Jangan memakai retry manual saja sebagai bukti stabilitas 24–48 jam.
 
 PostgreSQL pada VPS 8 GB masih memakai cap pilot 512 MiB; cap dinaikkan ke 1.536 MiB tanpa restart DB untuk memberi headroom cache pada update massal. Worker timeout juga menghentikan koneksi PostgreSQL yang berasal dari IP container miliknya sebelum container dihapus; close Docker CLI/container saja tidak menjamin query server berhenti. Runtime rc.7 dan host support revision dipantau terpisah.
+
+Percobaan index staging rc.7 masih memerlukan 17 menit untuk update account penuh
+pada disk produksi. Expiry kemudian diganti dengan marker generasi: timestamp DB
+diambil setelah advisory lock, seluruh row present mendapat marker itu, dan row
+source yang tidak mendapat marker di-expire dalam transaksi yang sama. Tidak ada
+anti-join ke staging lagi; source lain tidak diubah. Capture setelah lock menghindari
+transaction-NOW yang lebih tua daripada publisher yang selesai sebelumnya.
