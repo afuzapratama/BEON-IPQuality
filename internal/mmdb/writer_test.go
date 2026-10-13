@@ -83,3 +83,26 @@ func TestEvidenceOverlapIsOrderIndependentAndRetainsCap(t *testing.T) {
 		r.Close()
 	}
 }
+
+func TestIPv6TransitionRecordsDoNotAliasIPv4(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transition.mmdb")
+	entries := []ReputationEntry{
+		{Prefix: netip.MustParsePrefix("168.144.132.25/32"), RiskScore: 80, Flags: EntryFlags{IsTor: true}},
+		{Prefix: netip.MustParsePrefix("2002:a890:8419::a890:8419/128"), RiskScore: 32, Flags: EntryFlags{IsProxy: true}},
+		{Prefix: netip.MustParsePrefix("2001:0000:4136:e378:8000:63bf:3fff:fdd2/128"), RiskScore: 45, Flags: EntryFlags{IsVPN: true}},
+	}
+	if err := NewDefaultWriter().CompileToMMDB(entries, path); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewReader(path, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	for ip, want := range map[string]int{"168.144.132.25": 80, "2002:a890:8419::a890:8419": 32, "2001:0000:4136:e378:8000:63bf:3fff:fdd2": 45} {
+		got, err := r.LookupAll(netip.MustParseAddr(ip))
+		if err != nil || got.Score != want {
+			t.Fatalf("%s: got %#v, err %v, want %d", ip, got, err, want)
+		}
+	}
+}

@@ -97,3 +97,25 @@ func TestEnabledSourcesExcludeDisabledAndRemovedSources(t *testing.T) {
 		t.Fatalf("source IDs: %v", ids)
 	}
 }
+
+func TestProductionWriterAcceptsExplicitSixToFourRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "six-to-four.mmdb")
+	entries := []mmdb.ReputationEntry{
+		{Prefix: netip.MustParsePrefix("168.144.132.25/32"), RiskScore: 80},
+		{Prefix: netip.MustParsePrefix("2002:a890:8419::a890:8419/128"), RiskScore: 32},
+	}
+	if err := mmdb.NewWriter(reputationWriterConfig(28)).CompileToMMDB(entries, path); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := mmdb.NewReader(path, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	for ip, want := range map[string]int{"168.144.132.25": 80, "2002:a890:8419::a890:8419": 32} {
+		got, err := reader.LookupAll(netip.MustParseAddr(ip))
+		if err != nil || got.Score != want {
+			t.Fatalf("%s: %#v %v", ip, got, err)
+		}
+	}
+}

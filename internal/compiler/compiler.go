@@ -81,6 +81,7 @@ func reputationWriterConfig(recordSize int) mmdb.WriterConfig {
 		RecordSize:          recordSize,
 		IPVersion:           0,
 		IncludeReservedNets: true,
+		DisableIPv4Aliasing: true,
 	}
 }
 

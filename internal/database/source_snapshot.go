@@ -37,6 +37,14 @@ func (db *PostgresDB) ReplaceReputationSource(ctx context.Context, source string
 	if err != nil {
 		return 0, fmt.Errorf("stage source: %w", err)
 	}
+	// The expiry anti-join must not repeatedly scan a million-row staging table.
+	// Expression keys match the inet casts used by the publication query.
+	if _, err := tx.Exec(ctx, `CREATE INDEX beon_feed_stage_ips ON beon_feed_stage ((ip_start::inet),(ip_end::inet))`); err != nil {
+		return 0, fmt.Errorf("index staged source: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE beon_feed_stage`); err != nil {
+		return 0, fmt.Errorf("analyze staged source: %w", err)
+	}
 	result, err := tx.Exec(ctx, `INSERT INTO ip_reputation (ip_start,ip_end,cidr,source,threat_type,confidence,weight,first_seen,last_seen,expires_at)
  SELECT DISTINCT ON (ip_start,ip_end) ip_start::inet,ip_end::inet,cidr::cidr,$1,threat_type,confidence,weight,NOW(),NOW(),$2 FROM beon_feed_stage ORDER BY ip_start,ip_end
  ON CONFLICT (ip_start,ip_end,source) DO UPDATE SET cidr=EXCLUDED.cidr,threat_type=EXCLUDED.threat_type,confidence=EXCLUDED.confidence,weight=EXCLUDED.weight,last_seen=EXCLUDED.last_seen,expires_at=EXCLUDED.expires_at`, source, expiry)

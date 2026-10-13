@@ -8,5 +8,5 @@ Environment=PROJECT_ROOT=/opt/beon-ipquality
 Environment=AVASTEL_KEY_FILE=/etc/beon-ipquality/avastel.key
 ExecStart=/usr/bin/python3 /opt/beon-ipquality/scripts/avastel-sync.py refresh
 UMask=0077
-TimeoutStartSec=1500
+TimeoutStartSec=3600
 MemoryMax=768M
