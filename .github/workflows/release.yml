@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  binaries:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and verify binary archive
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          ./scripts/package-release.sh
+          cd dist
+          sha256sum --check *.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goarch }}
+          path: dist/beon-ipquality_*
+
+  images:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [api, ingestor, compiler, judge]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Image metadata
+        id: meta
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "image=ghcr.io/${REPOSITORY,,}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        id: build
+        with:
+          context: .
+          target: ${{ matrix.service }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=beon-${{ matrix.service }}
+          cache-to: type=gha,scope=beon-${{ matrix.service }},mode=max
+      - name: Verify published platforms and save digest
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SERVICE: ${{ matrix.service }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw > manifest.json
+          jq -e '.manifests | any(.platform.os=="linux" and .platform.architecture=="arm64")' manifest.json
+          jq -e '.manifests | any(.platform.os=="linux" and .platform.architecture=="amd64")' manifest.json
+          docker run --rm --platform linux/arm64 --network none --read-only "$IMAGE@$DIGEST" -help
+          jq -n --arg service "$SERVICE" --arg image "$IMAGE" --arg digest "$DIGEST" '{service:$service,image:$image,digest:$digest}' > "image-$SERVICE.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.service }}
+          path: image-${{ matrix.service }}.json
+
+  publish:
+    needs: [binaries, images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble immutable deployment lock and checksums
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          cd dist
+          sha256sum --check *.sha256
+          jq -s '.' image-*.json > images.json
+          python3 - <<'PY'
+          import json, os, pathlib
+          images=json.loads(pathlib.Path('images.json').read_text())
+          lines=[f'RELEASE_VERSION={os.environ["RELEASE_VERSION"]}',f'SOURCE_REVISION={os.environ["SOURCE_REVISION"]}']
+          for image in sorted(images,key=lambda i:i['service']):
+              lines.append(f'{image["service"].upper()}_IMAGE={image["image"]}@{image["digest"]}')
+          pathlib.Path('deployment-lock.env').write_text('\n'.join(lines)+'\n')
+          PY
+          for spec in 'POSTGRES_IMAGE postgres:17-alpine' 'REDIS_IMAGE redis:7-alpine'; do
+            read -r key image <<< "$spec"
+            digest=$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}')
+            echo "$key=$image@$digest" >> deployment-lock.env
+          done
+          sha256sum *.tar.gz images.json deployment-lock.env > SHA256SUMS
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          args=(--generate-notes --verify-tag)
+          if [[ "$RELEASE_VERSION" == *-* ]]; then args+=(--prerelease --latest=false); fi
+          gh release create "$RELEASE_VERSION" dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS dist/images.json dist/deployment-lock.env "${args[@]}"

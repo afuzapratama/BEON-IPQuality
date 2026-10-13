@@ -332,9 +332,9 @@ feeds:
     weight: 85
     schedule: "*/30 * * * *"  # Every 30 minutes
     sources:
-      - url: "https://urlhaus.abuse.ch/downloads/hostfile/"
-        format: "hostfile"
-        name: "urlhaus_hosts"
+      - url: "https://urlhaus.abuse.ch/downloads/text/"
+        format: "url"
+        name: "urlhaus_ip_text"
 
   # ============================================
   # TALOS INTELLIGENCE (DISABLED - URL returns 404)
@@ -351,6 +351,125 @@ feeds:
       - url: "https://www.talosintelligence.com/documents/ip-blacklist"
         format: "plain"
         name: "talos_ip"
+
+  # ============================================
+  # PROXY LISTS - ADDITIONAL HIGH QUALITY SOURCES
+  # ============================================
+  proxy_lists_extended:
+    enabled: true
+    name: "Extended Public Proxy Lists"
+    description: "Additional community proxy lists from multiple aggregators"
+    threat_type: "proxy"
+    confidence: 0.65
+    weight: 45
+    schedule: "@hourly"
+    sources:
+      - url: "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"
+        format: "ip_port"
+        name: "monosans_http"
+      - url: "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt"
+        format: "ip_port"
+        name: "monosans_socks4"
+      - url: "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt"
+        format: "ip_port"
+        name: "monosans_socks5"
+      - url: "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt"
+        format: "ip_port"
+        name: "clarketm"
+      - url: "https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&country=all&timeout=5000&proxy_format=ipport&format=text"
+        format: "ip_port"
+        name: "proxyscrape_all"
+
+  # ============================================
+  # SOCKS5 PROXY LISTS
+  # ============================================
+  socks5_lists:
+    enabled: true
+    name: "SOCKS5 Proxy Lists"
+    description: "Dedicated SOCKS5 proxy aggregators"
+    threat_type: "proxy"
+    confidence: 0.7
+    weight: 50
+    schedule: "@hourly"
+    sources:
+      - url: "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
+        format: "ip_port"
+        name: "hookzof_socks5"
+      - url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt"
+        format: "ip_port"
+        name: "speedx_socks5_new"
+
+  # ============================================
+  # VPN PROVIDERS - EXTENDED
+  # ============================================
+  vpn_extended:
+    enabled: true
+    name: "Extended VPN Provider IP Ranges"
+    description: "Additional known VPN provider ASN ranges"
+    threat_type: "vpn"
+    confidence: 0.9
+    weight: 50
+    schedule: "@daily"
+    sources:
+      - url: "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt"
+        format: "plain"
+        name: "x4b_vpn_v4"
+      - url: "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv6.txt"
+        format: "plain"
+        name: "x4b_vpn_v6"
+
+  # ============================================
+  # DATACENTER - EXTENDED
+  # ============================================
+  datacenter_extended:
+    enabled: true
+    name: "Extended Datacenter IP Ranges"
+    description: "Comprehensive datacenter & cloud provider IP ranges"
+    threat_type: "datacenter"
+    confidence: 0.92
+    weight: 50
+    schedule: "@weekly"
+    sources:
+      - url: "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt"
+        format: "plain"
+        name: "x4b_dc_v4"
+      - url: "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv6.txt"
+        format: "plain"
+        name: "x4b_dc_v6"
+
+  # ============================================
+  # TOR - ADDITIONAL SOURCES
+  # ============================================
+  tor_extended:
+    enabled: true
+    name: "Tor Extended Lists"
+    description: "Additional Tor node lists including non-exit relays"
+    threat_type: "tor"
+    confidence: 0.95
+    weight: 65
+    schedule: "@hourly"
+    sources:
+      - url: "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst"
+        format: "plain"
+        name: "secops_tor_exit"
+      # The former tor-all-nodes.lst source was removed because the upstream
+      # endpoint returned 404 during the 2026-09 audit.
+
+  # ============================================
+  # MIRAI BOTNET TRACKER
+  # ============================================
+  mirai_tracker:
+    enabled: false  # Disabled: source was unreachable during 2026-09 audit
+    name: "Mirai Botnet Tracker"
+    description: "IPs observed in Mirai botnet attacks"
+    threat_type: "botnet_c2"
+    confidence: 0.85
+    weight: 80
+    schedule: "@hourly"
+    sources:
+      - url: "https://mirai.security.gives/data/ip_list.txt"
+        format: "plain"
+        name: "mirai_ips"
 
 # Feed format parsers
 formats:
@@ -374,6 +493,10 @@ formats:
     description: "IP:PORT format"
     comment_prefix: "#"
     separator: ":"
+
+  url:
+    description: "URL with an IP address as host"
+    comment_prefix: "#"
 
 # Whitelist - IPs/ranges that should never be flagged
 whitelist:

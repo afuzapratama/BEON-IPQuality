@@ -74,6 +74,64 @@ type IPReputationEntry struct {
 	Metadata   map[string]interface{}
 }
 
+// WhitelistEntry represents an IP range that must override threat data.
+type WhitelistEntry struct {
+	IPStart   string
+	IPEnd     string
+	CIDR      *string
+	Name      string
+	Source    string
+	Permanent bool
+}
+
+// ReplaceWhitelistSource atomically replaces all whitelist ranges owned by a
+// source. A failed or empty remote download is rejected by the ingestor before
+// this method is called, so a transient outage cannot erase a working list.
+func (db *PostgresDB) ReplaceWhitelistSource(ctx context.Context, source string, entries []WhitelistEntry) (int, error) {
+	if len(entries) == 0 {
+		return 0, fmt.Errorf("refusing to replace whitelist source %q with no entries", source)
+	}
+
+	tx, err := db.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin whitelist transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "DELETE FROM whitelist WHERE source = $1", source); err != nil {
+		return 0, fmt.Errorf("clear whitelist source %q: %w", source, err)
+	}
+
+	batch := &pgx.Batch{}
+	for _, entry := range entries {
+		batch.Queue(`
+			INSERT INTO whitelist (ip_start, ip_end, cidr, name, source, permanent)
+			VALUES ($1::inet, $2::inet, $3::cidr, $4, $5, $6)
+			ON CONFLICT (ip_start, ip_end) DO UPDATE SET
+				cidr = EXCLUDED.cidr,
+				name = EXCLUDED.name,
+				source = EXCLUDED.source,
+				permanent = EXCLUDED.permanent,
+				expires_at = NULL
+		`, entry.IPStart, entry.IPEnd, entry.CIDR, entry.Name, entry.Source, entry.Permanent)
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	for range entries {
+		if _, err := results.Exec(); err != nil {
+			results.Close()
+			return 0, fmt.Errorf("insert whitelist source %q: %w", source, err)
+		}
+	}
+	if err := results.Close(); err != nil {
+		return 0, fmt.Errorf("close whitelist batch for %q: %w", source, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit whitelist source %q: %w", source, err)
+	}
+	return len(entries), nil
+}
+
 // InsertReputation inserts or updates an IP reputation entry
 func (db *PostgresDB) InsertReputation(ctx context.Context, entry *IPReputationEntry) error {
 	query := `
@@ -124,8 +182,9 @@ func (db *PostgresDB) InsertReputationBatch(ctx context.Context, entries []IPRep
 			VALUES ($1::inet, $2::inet, $3::cidr, $4, $5, $6, $7, $8, $9, $10)
 			ON CONFLICT (ip_start, ip_end, source) 
 			DO UPDATE SET
-				confidence = GREATEST(ip_reputation.confidence, EXCLUDED.confidence),
-				weight = GREATEST(ip_reputation.weight, EXCLUDED.weight),
+				confidence = EXCLUDED.confidence,
+				weight = EXCLUDED.weight,
+ threat_type = EXCLUDED.threat_type,
 				last_seen = EXCLUDED.last_seen
 		`
 		batch.Queue(query,
@@ -146,17 +205,14 @@ func (db *PostgresDB) InsertReputationBatch(ctx context.Context, entries []IPRep
 	defer results.Close()
 
 	inserted := 0
-	for i := range entries {
-		_, err := results.Exec()
-		if err != nil {
-			// Log the error with entry details for debugging
-			if i < 3 { // Only log first 3 errors to avoid spam
-				logger.Error(fmt.Sprintf("Batch insert error for entry %d (ip=%s, source=%s): %v",
-					i, entries[i].IPStart, entries[i].Source, err))
-			}
-			continue
+	for range entries {
+		if _, err := results.Exec(); err != nil {
+			return inserted, fmt.Errorf("reputation batch failed: %w", err)
 		}
 		inserted++
+	}
+	if err := results.Close(); err != nil {
+		return inserted, fmt.Errorf("close reputation batch: %w", err)
 	}
 
 	return inserted, nil
@@ -458,11 +514,18 @@ func IPRangeFromPrefix(prefix netip.Prefix) (start, end string) {
 		start = fmt.Sprintf("%d.%d.%d.%d", byte(startIP>>24), byte(startIP>>16), byte(startIP>>8), byte(startIP))
 		end = fmt.Sprintf("%d.%d.%d.%d", byte(endIP>>24), byte(endIP>>16), byte(endIP>>8), byte(endIP))
 	} else {
-		// IPv6 - simplified, just use the prefix masked address
 		masked := prefix.Masked()
 		start = masked.Addr().String()
-		// For IPv6, calculate end is more complex, using a simplified approach
-		end = start // For single IP queries this works
+		endBytes := masked.Addr().As16()
+		fullBytes := bits / 8
+		if remainder := bits % 8; remainder != 0 {
+			endBytes[fullBytes] |= byte(0xff >> remainder)
+			fullBytes++
+		}
+		for index := fullBytes; index < len(endBytes); index++ {
+			endBytes[index] = 0xff
+		}
+		end = netip.AddrFrom16(endBytes).String()
 	}
 
 	return start, end

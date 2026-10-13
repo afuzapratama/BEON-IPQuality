@@ -94,9 +94,9 @@ func TestGetRiskLevel(t *testing.T) {
 		score int
 		want  string
 	}{
-		{0, "safe"},
-		{10, "safe"},
-		{24, "safe"},
+		{0, "clean"},
+		{10, "clean"},
+		{24, "clean"},
 		{25, "low"},
 		{49, "low"},
 		{50, "medium"},

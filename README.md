@@ -1,571 +1,268 @@
-# 🛡️ BEON-IPQuality
+# BEON-IPQuality
 
-**High-Performance IP Reputation & Proxy Detection System**
+BEON-IPQuality mengumpulkan feed reputasi IP ke PostgreSQL, menggabungkan sinyal lintas sumber, lalu menyusun database MaxMind (MMDB) untuk lookup API yang cepat. API bersifat fail-closed: bila MMDB belum tersedia atau gagal dibaca, endpoint reputasi mengembalikan HTTP 503 dan tidak menyatakan IP sebagai bersih.
 
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## Status deployment
 
----
+Hasil verifikasi 13 Oktober 2026: API privat ARM64 berjalan dengan runtime
+[`v1.1.0-rc.4`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.4)
+dan [manifest image berbasis digest](deployments/releases/v1.1.0-rc.4.env).
+VPS memakai Docker Compose, reverse proxy Caddy yang sudah ada, updater MaxMind
+native, dan monitoring Glances tanpa aaPanel. Perubahan produksi dan bukti validasi
+direview melalui [PR #1](https://github.com/afuzapratama/BEON-IPQuality/pull/1); status merge tersedia di GitHub.
 
-## 📖 Overview
+| Bagian | Status pilot |
+|---|---|
+| API HTTPS | `https://ipproxy.beon-api.site/api/v1/check/8.8.8.8`, memerlukan API key |
+| Dataset | Feed terkurasi + dataset akun Avastel privat, [profil ARM 8 GB](configs/feeds.pilot.arm-8gb.yaml) |
+| Scoring | `evidence-family-max-v1`; precision/recall belum diukur pada korpus independen |
+| GeoIP | GeoLite2 City/ASN diperbarui ke direktori MMDB proyek oleh timer host |
+| Backup | Backup terenkripsi age ke Bunny S3; download, decrypt, dan restore terisolasi sudah diuji |
+| Alert | Telegram native + uptime dari GitHub runner eksternal; Glances melalui SSH tunnel |
 
-BEON-IPQuality adalah sistem reputasi IP dan deteksi proxy berkinerja tinggi. Sistem ini mampu mendeteksi:
+Domain utama menyediakan halaman lookup IP dengan kolom API key. `/health` dan
+`/metrics` dapat diakses langsung tanpa key. Route `/api/v1/*` tersedia lewat HTTPS:
+lookup dan stats memerlukan API key; cache/reload memerlukan admin key yang berbeda.
+Kuota publik pilot 1.000 request/menit/key. Key tidak disimpan oleh halaman lookup.
 
-- 🧅 **Tor Exit Nodes** - Jaringan anonimisasi Tor
-- 🔒 **VPN/Proxy** - VPN komersial dan proxy publik
-- 🏢 **Datacenter IPs** - IP dari penyedia hosting/cloud
-- 🤖 **Botnet C2** - Server Command & Control malware
-- 🚫 **Blacklisted IPs** - IP dari berbagai threat intelligence feeds
+Dataset akun diperbarui **setiap 7 jam**, dengan refresh pemulihan setelah boot.
+[Alur produksi privat](docs/AVASTEL_PRIVATE_PRODUCTION.md) mengatur key, validasi,
+refresh atomik dan retention. Workflow uptime aktif di `main`. Phase 6 belum
+menutup seluruh gate produksi. Bukti pengujian, batas kapasitas,
+dan pekerjaan tersisa tercatat pada [laporan phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md).
 
-## ✨ Features
+## Komponen
 
-- ⚡ **Ultra-fast queries** (< 1ms latency)
-- 📊 **Risk scoring** (0-100) dengan kategorisasi
-- 🔄 **Auto-update** threat feeds setiap 4 jam
-- 🌐 **REST API** dengan API key authentication
-- 📈 **1.6M+ IP entries** dari 21 threat feeds
-- 🔒 **Rate limiting** built-in
+- `ingestor`: mengambil feed, memvalidasi IP/CIDR, menyinkronkan whitelist, dan melakukan upsert ke PostgreSQL.
+- `compiler`: mengagregasi sumber dan threat type, menghitung skor, lalu menulis MMDB secara atomik.
+- `api`: lookup MMDB, cache Redis opsional, autentikasi API key, rate limit, health check, dan metrik Prometheus.
+- `judge`: lookup dan active proxy scanning opsional. Service ini dinonaktifkan dari Compose standar dan hanya bind ke loopback ketika profilnya dipakai.
 
----
+## Menjalankan dengan Docker Compose
 
-## 🚀 Quick Start Installation
-
-### One-Line Install (Ubuntu 22.04/24.04 LTS)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/afuzapratama/BEON-IPQuality/main/scripts/install-ubuntu.sh | sudo bash
-```
-
-### What Gets Installed
-
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| PostgreSQL | 17 | Primary database |
-| Redis | 7 | Caching layer |
-| Nginx | Latest | Reverse proxy |
-| Go | 1.25 | Runtime (for compilation) |
-
-### Installation Process (~2 minutes)
-
-The installer will:
-
-1. ✅ Update system packages
-2. ✅ Install Go 1.25.3
-3. ✅ Install & configure PostgreSQL 17
-4. ✅ Install & configure Redis 7
-5. ✅ Install & configure Nginx
-6. ✅ Create `beon` system user
-7. ✅ Clone repository & download pre-built binaries
-8. ✅ Run database migrations (8 tables)
-9. ✅ Create configuration files
-10. ✅ Setup systemd services
-11. ✅ Configure firewall (UFW)
-12. ✅ **Ingest 1.6M+ threat IPs** from 21 feeds
-
-### Interactive Prompts
-
-During installation, you'll be asked for MaxMind credentials (optional):
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  MaxMind GeoLite2 Configuration (Optional - for GeoIP features)│
-├─────────────────────────────────────────────────────────────────┤
-│  Get your FREE Account ID & License Key at:                    │
-│  https://www.maxmind.com/en/geolite2/signup                    │
-└─────────────────────────────────────────────────────────────────┘
-
-Enter MaxMind Account ID (or 'skip'): 
-```
-
-> 💡 Type `skip` if you don't have MaxMind credentials.
-
----
-
-## 📋 Post-Installation
-
-After installation completes, you'll see:
-
-```
-╔══════════════════════════════════════════════════════════════════╗
-║              🎉 INSTALLATION COMPLETE! 🎉                        ║
-║              Total time: ~2 minutes                              ║
-╚══════════════════════════════════════════════════════════════════╝
-
-🔑 YOUR API KEY (SAVE THIS!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb
-
-📊 SERVICE STATUS
-━━━━━━━━━━━━━━━━━
-  PostgreSQL: active
-  Redis:      active
-  Nginx:      active
-  Database:   1,636,197 IP entries
-```
-
-### Step 1: Start API Server
+Persyaratan: Docker dengan plugin Compose modern dan akses internet untuk mengambil feed.
+Jalur ini untuk pengembangan. Deployment VPS memakai paket produksi pada bagian
+[Paket produksi ARM64](#paket-produksi-arm64). Konfigurasi feed default berbeda
+dari pilot terkurasi; seluruh feed default belum terbukti muat pada VPS 4 GB.
 
 ```bash
-sudo systemctl start beon-api
-sudo systemctl enable beon-api
+cp .env.example .env
 ```
 
-### Step 2: Verify Services
+Isi sekurangnya `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, dan `API_KEY` (minimal 32 karakter acak), lalu jalankan:
 
 ```bash
-# Check all services are running
-sudo systemctl status beon-api
-sudo systemctl status postgresql
-sudo systemctl status redis
-sudo systemctl status nginx
+docker compose up --build -d
+docker compose ps
+curl http://127.0.0.1:8080/health
 ```
 
-### Step 3: Test the API
+Startup pertama menjalankan migrasi berversi/checksum melalui service `migrate`, ingest awal, dan kompilasi MMDB sebelum API dinyalakan. Proses ini bergantung pada ukuran feed dan koneksi jaringan. API secara default hanya tersedia di `127.0.0.1:8080`; gunakan reverse proxy HTTPS sebelum mengubah `API_BIND_ADDRESS` menjadi `0.0.0.0`.
+
+Profil opsional:
 
 ```bash
-# Health check (no auth required)
-curl http://localhost/health
+# Prometheus, Grafana, ClickHouse, dan exporter
+docker compose --profile monitoring up -d
+
+# Judge active scanner (tetap bind ke 127.0.0.1)
+docker compose --profile active-scanning up -d judge
+
+# Pembaruan GeoLite2; isi kredensial MaxMind terlebih dahulu
+docker compose --profile geoip up -d geoip-updater
 ```
 
-**Expected response:**
-```json
-{"status":"healthy","version":"1.0.0","uptime":"10.5s","timestamp":"2025-12-09T06:07:59Z"}
-```
+Jangan menjalankan Judge sebagai endpoint publik. Walaupun target non-publik ditolak dan autentikasi diwajibkan di production, fitur ini tetap melakukan koneksi aktif ke host tujuan.
 
----
+## API
 
-## 🧪 API Testing Guide
+Health dan metrics tidak memerlukan API key dan dapat dibuka langsung melalui HTTPS pada VPS pilot. Endpoint lookup `/api/v1/*` memerlukan `X-API-Key: $API_KEY` ketika autentikasi aktif. Route reload dan cache management memakai `X-API-Key: $ADMIN_API_KEY` yang berbeda; bila `ADMIN_API_KEY` kosong, route admin mengembalikan 404. Route admin dapat diakses melalui HTTPS pada pilot, dengan admin key terpisah. Kuota lookup dihitung per key setelah autentikasi; health/metrics tidak dibatasi kuota tersebut.
 
-### ⚠️ Important: API Endpoint Format
-
-The IP address goes in the **URL path**, NOT as a query parameter:
+Header `X-Real-IP` hanya dipercaya dari peer pada `TRUSTED_PROXIES` (IP/CIDR dipisahkan koma). Default kosong mempercayai tidak ada proxy. Reverse proxy (Caddy pada VPS pilot, atau Nginx) harus menimpa header tersebut dengan alamat klien; tentukan peer nyata dari jaringan deployment sebelum mengisi daftar ini.
 
 ```bash
-# ✅ CORRECT - IP in path
-curl "http://localhost/api/v1/check/8.8.8.8"
+curl http://127.0.0.1:8080/health
 
-# ❌ WRONG - IP as query parameter
-curl "http://localhost/api/v1/check?ip=8.8.8.8"
-```
+curl -H "X-API-Key: $API_KEY" \
+  http://127.0.0.1:8080/api/v1/check/8.8.8.8
 
-### Authentication
-
-All API endpoints (except `/health` and `/metrics`) require an API key header:
-
-```
-X-API-Key: YOUR_API_KEY
-```
-
----
-
-### 1. Health Check
-
-**Endpoint:** `GET /health`  
-**Auth Required:** No
-
-```bash
-curl http://localhost/health
-```
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "uptime": "1h30m45s",
-  "timestamp": "2025-12-09T06:07:59Z",
-  "services": {
-    "api": "healthy",
-    "database": "healthy",
-    "mmdb": "healthy"
-  }
-}
-```
-
----
-
-### 2. Check Single IP
-
-**Endpoint:** `GET /api/v1/check/:ip`  
-**Auth Required:** Yes
-
-```bash
-# Replace YOUR_API_KEY with your actual API key
-curl -H "X-API-Key: YOUR_API_KEY" "http://localhost/api/v1/check/8.8.8.8"
-```
-
-**Example - Check Google DNS (clean IP):**
-```bash
-curl -H "X-API-Key: NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb" \
-  "http://localhost/api/v1/check/8.8.8.8"
-```
-
-**Response (Clean IP):**
-```json
-{
-  "ip": "8.8.8.8",
-  "score": 0,
-  "risk_level": "low",
-  "threats": [],
-  "is_proxy": false,
-  "is_vpn": false,
-  "is_tor": false,
-  "is_datacenter": false,
-  "cached": false,
-  "query_time_ms": 0.45
-}
-```
-
-**Example - Check Known Malicious IP:**
-```bash
-curl -H "X-API-Key: NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb" \
-  "http://localhost/api/v1/check/185.220.101.1"
-```
-
-**Response (Malicious IP):**
-```json
-{
-  "ip": "185.220.101.1",
-  "score": 85,
-  "risk_level": "high",
-  "threats": ["tor_exit", "proxy", "anonymizer"],
-  "is_proxy": true,
-  "is_vpn": false,
-  "is_tor": true,
-  "is_datacenter": true,
-  "first_seen": "2024-01-15T00:00:00Z",
-  "last_seen": "2025-12-09T00:00:00Z",
-  "source_count": 5,
-  "cached": false,
-  "query_time_ms": 0.32
-}
-```
-
----
-
-### 3. Batch Check (Multiple IPs)
-
-**Endpoint:** `POST /api/v1/batch`  
-**Auth Required:** Yes  
-**Max IPs:** 100 per request
-
-```bash
 curl -X POST \
-  -H "X-API-Key: YOUR_API_KEY" \
+  -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"ips": ["8.8.8.8", "185.220.101.1", "1.1.1.1"]}' \
-  "http://localhost/api/v1/batch"
+  -d '{"ips":["8.8.8.8","1.1.1.1"]}' \
+  http://127.0.0.1:8080/api/v1/check/batch
 ```
 
-**Response:**
-```json
-{
-  "results": [
-    {"ip": "8.8.8.8", "score": 0, "risk_level": "low"},
-    {"ip": "185.220.101.1", "score": 85, "risk_level": "high"},
-    {"ip": "1.1.1.1", "score": 0, "risk_level": "low"}
-  ],
-  "total_count": 3,
-  "total_time_ms": 1.25
-}
-```
-
----
-
-### 4. Get Statistics
-
-**Endpoint:** `GET /api/v1/stats`  
-**Auth Required:** Yes
+Contoh akses pilot dari komputer klien; isi variabel dari file kredensial privat
+yang sudah disiapkan, tanpa memasukkan secret ke repository:
 
 ```bash
-curl -H "X-API-Key: YOUR_API_KEY" "http://localhost/api/v1/stats"
+# API_BASE_URL=https://ipproxy.beon-api.site
+# API_KEY diambil dari konfigurasi klien privat.
+curl --fail-with-body -H "X-API-Key: $API_KEY" \
+  "$API_BASE_URL/api/v1/check/8.8.8.8"
 ```
 
----
+Endpoint berikut tersedia langsung melalui domain pilot:
 
-### 5. Prometheus Metrics
+| Method | Path | Akses pada VPS pilot | Keterangan |
+|---|---|---|---|
+| `GET` | `/` | HTTPS publik; tanpa key | Halaman lookup IP dengan input API key |
+| `GET` | `/health` | HTTPS publik; tanpa key | Kesiapan API/MMDB; 503 jika tidak siap atau stale |
+| `GET` | `/metrics` | HTTPS publik; tanpa key | Metrik Prometheus |
+| `GET` | `/api/v1/check/:ip` | HTTPS publik + API key | Lookup satu IP publik |
+| `POST` | `/api/v1/check/batch` | HTTPS publik + API key | Lookup hingga batas `api.batch_max_size` |
+| `GET` | `/api/v1/stats` | HTTPS publik + API key | Statistik sejak proses API dimulai |
+| `GET` | `/api/v1/cache/stats` | HTTPS publik + admin key | Statistik cache |
+| `DELETE` | `/api/v1/cache` | HTTPS publik + admin key | Menghapus cache aplikasi |
+| `POST` | `/api/v1/reload` | HTTPS publik + admin key | Reload MMDB |
 
-**Endpoint:** `GET /metrics`  
-**Auth Required:** No
+Pada pilot, Caddy menyajikan halaman utama serta meneruskan `/health`, `/metrics`,
+dan `/api/v1/*` ke API. Lookup tanpa header `X-API-Key` mengembalikan 401.
+Gunakan form pada [domain utama](https://ipproxy.beon-api.site) untuk mencoba lookup
+melalui browser; API key tetap diperlukan. Halaman tidak menyimpan key di browser.
+Batch harus memakai POST; reload memakai POST dan penghapusan cache memakai DELETE.
+
+API key klien tersedia pada file privat `ipproxy-client.env` yang sudah diberikan
+kepada operator. Jangan memasukkan key ke URL/query string atau repository.
+
+Pemeriksaan langsung 13 Oktober 2026 setelah perubahan proxy: halaman utama,
+health, metrics, stats dengan key, lookup single, dan batch HTTPS HTTP 200.
+Lookup tanpa key dan route admin dengan key klien HTTP 401. Konfigurasi tersedia
+pada [template Caddy](configs/caddy/beon-production.caddyfile), dengan sumber
+halaman pada [index.html](configs/web/index.html). Template memuat HTML halaman;
+sinkronkan blok HTML tersebut bila halaman diubah.
+
+
+Respons lookup memakai field `score`/`risk_score`, `risk_level`, flag seperti `proxy`, `vpn`, dan `tor`, serta `threat_types` dan `sources` bila ditemukan. IP private, loopback, link-local, multicast, dan alamat non-global lain ditolak.
+
+## Scoring, freshness, dan reload
+
+Policy `evidence-family-max-v1` memakai kontribusi terkuat per family anonymity/abuse/infrastructure; datacenter/ASN sendiri maksimum 20, overlap CIDR dihitung ulang dari evidence dan tidak menggandakan skor. Nilai ini heuristic, bukan probabilitas atau angka akurasi yang sudah terkalibrasi. Lihat [phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md).
+
+Compiler memakai `scoring.decay_lambda`, `max_score`, `weights`, `asn_bonuses`, dan `risk_threshold`. Bobot dapat memakai ID feed pada `configs/feeds.yaml` atau ID feed/source; override source mengalahkan override feed, lalu bobot tersimpan, lalu default threat type. Respons menambahkan `risky` sesuai threshold (whitelist selalu false) dan `data_version` yang mengidentifikasi reputasi, GeoIP, serta ASN yang dipakai. ASN type berasal dari `asn_info`; GeoLite2-ASN hanya memberi nomor/org. Prefix yang melintasi beberapa record ASN tidak diberi satu klasifikasi ASN. Daftar ASN bawaan masih contoh terbatas.
+
+Default compile 15 menit, pemeriksaan reload 5 menit, dan umur maksimum snapshot 1 jam. Freshness source memakai satu interval cron feed ditambah compile/reload dan anggaran retry HTTP. Feed harian tetap mempunyai anggaran lebih dari 24 jam; ini bukan janji semua feed diperbarui dalam satu jam. Waktu antre/storage/compile nyata perlu diukur pada pilot. `/health` menampilkan versi, build time, umur snapshot, timestamp sukses tiap source, dan status stale. Lookup dan health mengembalikan 503 saat snapshot/feed melewati anggaran. Snapshot legacy tanpa metadata feed menampilkan `feed_freshness_known: false`; bootstrap pipeline baru diperlukan untuk memantau tiap source.
+
+Reload memverifikasi isi MMDB dan hanya mengganti generation bila checksum berbeda. Reload gagal mempertahankan semua database yang sebelumnya valid. File MMDB harus diganti secara atomik, bukan ditulis ulang di tempat. Cache memakai namespace versi; generation lama berakhir melalui TTL, sehingga reload tidak perlu menghapus semua cache. Operasi lookup cache dibatasi 50ms; error cache membuka jeda satu detik sebelum percobaan berikutnya dan lookup tetap memakai MMDB. Clear cache manual tetap tersedia dengan admin key.
+
+Compose mengekspor metrik pipeline secara internal pada `ingestor:9091` dan `compiler:9092`; API memakai `/metrics`. Untuk daemon native di host yang sama, set `METRICS_PORT` berbeda pada masing-masing service, dan biarkan `METRICS_HOST=127.0.0.1`.
+
+Uji integrasi deterministik dengan PostgreSQL 17, Redis 7, dan fixture feed/ASN:
 
 ```bash
-curl http://localhost/metrics
+./scripts/test-integration.sh
 ```
 
----
+Script membuat container sementara dengan port loopback dan membersihkannya setelah pengujian; tidak mengambil threat feed internet. CI menjalankan test yang sama dengan service PostgreSQL/Redis.
 
-## 🌐 External Access (From Internet)
+## Pengembangan
 
-### Access from Your Computer
+Tracker pekerjaan berada di [phase perbaikan dan deployment VPS ARM](docs/PHASE_PERBAIKAN_DAN_VPS_ARM.md), berdasarkan [audit docs dan implementasi](docs/AUDIT_DOCS_IMPLEMENTASI_2026-10-11.md). Status operasional terbaru mengikuti [laporan phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md); panduan deployment juga memuat rencana dan catatan tahap sebelumnya.
 
-Replace `YOUR_VPS_IP` with your VPS IP address:
+Go minimum mengikuti directive di `go.mod`.
 
 ```bash
-curl -H "X-API-Key: YOUR_API_KEY" "http://YOUR_VPS_IP/api/v1/check/8.8.8.8"
+go mod download
+go test ./...
+go test -race ./...
+go vet ./...
+govulncheck ./...
+go build ./cmd/...
 ```
 
-### Real Example
+Perintah ringkas juga tersedia melalui `make test`, `make test-race`, `make vet`, `make security`, dan `make build`. Untuk migrasi manual:
 
 ```bash
-curl -H "X-API-Key: NrA3pia8Bb2TATLPxlTp2NJWgahwnGPb" \
-  "http://45.143.166.221/api/v1/check/8.8.8.8"
+DATABASE_URL='postgresql://user:pass@host/db?sslmode=require' make migrate
 ```
 
----
+Kontrak API lengkap berada di [API.md](docs/API.md) dan [OpenAPI](docs/openapi.yaml).
 
-## 📁 Important Files & Locations
+Konfigurasi file berada di `configs/config.yaml` dan `configs/feeds.yaml`. Semua executable menggunakan environment override, termasuk `DATABASE_URL`, `REDIS_URL`, `PORT`, `API_KEY`, dan path MMDB. Lihat `.env.example` serta `railway.env.example`.
 
-| File | Path | Description |
-|------|------|-------------|
-| **Credentials** | `/opt/beon-ipquality/credentials.txt` | API key, DB password |
-| **Config** | `/opt/beon-ipquality/configs/config.yaml` | Main configuration |
-| **Feeds Config** | `/opt/beon-ipquality/configs/feeds.yaml` | Threat feed sources |
-| **Binaries** | `/opt/beon-ipquality/bin/` | api, judge, ingestor, compiler |
-| **Logs** | `/var/log/beon-ipquality/` | Application logs |
-| **Data** | `/var/lib/beon-ipquality/` | MMDB files, cache |
+## Deployment Railway
 
-### View Your Credentials
+Image API dapat dibangun melalui `railway.json`, tetapi MMDB bukan bagian dari image. Pasang persistent volume pada `/app/data`, lalu pastikan `/app/data/mmdb/reputation.mmdb` sudah dihasilkan compiler sebelum health check API. PostgreSQL dan Redis dapat menggunakan `DATABASE_URL` dan `REDIS_URL`. Detailnya ada di `docs/RAILWAY_DEPLOYMENT.md`.
+
+## Catatan installer Ubuntu
+
+`scripts/install-ubuntu.sh` membangun binary dari source checkout dan mempertahankan database yang sudah ada saat dijalankan ulang. Untuk server penting, clone repository, tinjau commit dan script lebih dahulu, lalu jalankan file lokal; jangan menyalurkan script internet langsung ke shell root tanpa verifikasi.
+
+## Lisensi
+
+[MIT](LICENSE)
+
+## Paket produksi ARM64
+
+Pilot berjalan di `/opt/beon-ipquality`, dengan API loopback port 8080 dan Caddy untuk HTTPS publik. Jalur VPS langsung memakai [Compose produksi](deployments/compose.production.yml) dan [panduan VPS ARM64](docs/VPS_ARM_DEPLOYMENT.md), dengan [backup/restore/rollback](docs/BACKUP_RESTORE_ROLLBACK.md). Image release dan `deployment-lock.env` memakai digest; source tidak dibuild ulang di VPS. Bind mount `/opt/beon-ipquality/data/mmdb` ke `/app/data/mmdb` membuat output geoipupdate host dibaca compiler/API.
+
+Pada VPS pilot, konfigurasi MaxMind berada di `/etc/beon-ipquality/GeoIP.conf` dengan permission 0600. `GEOIP_CONFIG_FILE=/path/GeoIP.conf MMDB_HOST_DIR=/opt/beon-ipquality/data/mmdb ./scripts/update-geoip.sh` mengarahkan hasil update ke direktori proyek; timer systemd tersedia pada `configs/systemd`. File harus memuat AccountID, LicenseKey dan EditionIDs City/ASN. Download City/ASN dan timer `beon-geoipupdate.timer` sudah terpasang pada pilot. Jadwal Rabu dan Sabtu pukul 12:00 WIB dengan jitter maksimum 30 menit. City dirilis Selasa/Jumat; ASN sebenarnya dirilis harian, tetapi ikut diambil dua kali seminggu untuk mengurangi frekuensi akses. MaxMind tidak menjamin jam rilis. Jalankan hanya satu updater; profil GeoIP container development tidak perlu diaktifkan bersamaan dengan timer host.
+
+Refresh source sekarang atomik dan menggantikan sinyal aktif source tersebut. Removed IP langsung expired; source gagal/empty/malformed tidak menghapus snapshot lama. TTL dua freshness budget, expired history 30 hari dan cleanup harian; lihat kebijakan pada panduan VPS. Latest attempt/success feed dipertahankan walau history lain dipruning.
+
+## Backup, monitoring, dan kapasitas
+
+VPS sudah di-upgrade menjadi 4 vCPU/8 GB RAM. NVMe lokal Azure 220 GB
+tersedia di `/mnt/beon-scratch` untuk staging sementara; storage sistem tetap
+30 GB. Disk NVMe ini dapat kehilangan data saat lifecycle VM, sehingga data
+produksi dan backup tetap memakai storage persisten. Lihat
+[panduan scratch storage](docs/VPS_SCRATCH_STORAGE.md).
+
+`beon-backup.timer` menjalankan backup harian pukul 02:30 WIB dengan jitter
+maksimum 15 menit. Pipeline memverifikasi checksum dan restore PostgreSQL/MMDB
+terisolasi, mengenkripsi bundle dengan age, mengunggah ke Bunny S3, lalu membaca
+ulang seluruh object untuk memverifikasi checksum ciphertext.
+Retention lokal minimum tujuh hari dan tujuh recovery point terverifikasi;
+offsite minimum 30 hari. Pruning menunggu backup terbaru lolos verifikasi offsite.
+Target RPO sekitar 24 jam ditambah jitter; RTO pemulihan penuh belum diukur.
+
+Secret Bunny/Telegram berada di `/etc/beon-ipquality/operations.env` (0600),
+dengan [template tanpa secret](configs/operations.env.example). VPS hanya menyimpan
+public recipient age. Private key pemulihan disimpan terpisah dari VPS dan
+harus tersedia untuk decrypt backup. Ikuti [panduan backup/restore/rollback](docs/BACKUP_RESTORE_ROLLBACK.md).
+
+`beon-alert-check.timer` memeriksa health, freshness, pipeline, container,
+resource, dan umur backup setiap menit. Telegram mengirim incident setelah dua
+pemeriksaan gagal berturut-turut, recovery, serta reminder. Monitor eksternal GitHub Actions memeriksa HTTPS kira-kira setiap lima menit
+dan mengirim incident/recovery Telegram. Scheduler bersifat best effort; detail
+dan batas scope ada pada [validasi operasional rc4](docs/OPERATIONS_RC4_VALIDATION.md).
+
+Glances tersedia di loopback port 61208 untuk CPU, RAM, trafik jaringan, dan disk I/O:
 
 ```bash
-sudo cat /opt/beon-ipquality/credentials.txt
+ssh -i /path/key.pem -L 61208:127.0.0.1:61208 ubuntu@VPS_IP
+# Buka http://127.0.0.1:61208 pada komputer klien.
 ```
 
-### View Logs
-
-```bash
-# Real-time API logs
-sudo journalctl -u beon-api -f
-
-# Or log file
-sudo tail -f /var/log/beon-ipquality/api.log
-```
-
----
-
-## 🔧 Management Commands
-
-### Service Management
-
-```bash
-# Start API
-sudo systemctl start beon-api
-
-# Stop API
-sudo systemctl stop beon-api
-
-# Restart API
-sudo systemctl restart beon-api
-
-# Check status
-sudo systemctl status beon-api
-
-# Enable auto-start on boot
-sudo systemctl enable beon-api
-```
-
-### Database Operations
-
-```bash
-# Check total IP count in database
-sudo -u postgres psql -d ipquality -c "SELECT COUNT(*) FROM ip_reputation;"
-
-# List all tables
-sudo -u postgres psql -d ipquality -c "\dt"
-
-# Query specific IP
-sudo -u postgres psql -d ipquality -c \
-  "SELECT * FROM ip_reputation WHERE ip_address = '185.220.101.1';"
-
-# Check threat types distribution
-sudo -u postgres psql -d ipquality -c \
-  "SELECT threat_type, COUNT(*) FROM ip_reputation GROUP BY threat_type ORDER BY count DESC;"
-```
-
-### Manual Threat Feed Update
-
-```bash
-# Run ingestor manually (normally auto-runs every 4 hours)
-sudo -u beon /opt/beon-ipquality/bin/ingestor --once --verbose
-```
-
-### Compile MMDB (Optional - for faster lookups)
-
-```bash
-sudo -u beon /opt/beon-ipquality/bin/compiler
-```
-
----
-
-## 🔄 Auto-Updates
-
-Threat feeds are automatically updated every 4 hours via cron:
-
-```bash
-# View cron job
-cat /etc/cron.d/beon-ingestor
-
-# Check last ingestor run
-sudo journalctl -u beon-ingestor --since "4 hours ago"
-```
-
----
-
-## 📊 Monitoring & Dashboards
-
-### Grafana Dashboard (Optional)
-
-To install Grafana for monitoring:
-
-```bash
-# Install Grafana
-sudo apt-get install -y apt-transport-https software-properties-common
-wget -q -O - https://apt.grafana.com/gpg.key | sudo apt-key add -
-echo "deb https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
-sudo apt-get update && sudo apt-get install -y grafana
-
-# Start Grafana
-sudo systemctl start grafana-server
-sudo systemctl enable grafana-server
-```
-
-**Access Grafana:**
-- URL: `http://YOUR_VPS_IP:3000`
-- Default Username: `admin`
-- Default Password: `admin` (change on first login)
-- Or use generated password from: `cat /opt/beon-ipquality/credentials.txt | grep GRAFANA`
-
-**Configure Prometheus Data Source:**
-1. Go to Configuration → Data Sources → Add data source
-2. Select **Prometheus**
-3. URL: `http://localhost:9090`
-4. Click **Save & Test**
-
-### Prometheus Metrics
-
-Built-in metrics endpoint at `/metrics`:
-
-```bash
-curl http://localhost/metrics
-```
-
-Available metrics:
-- `beon_api_requests_total` - Total API requests
-- `beon_api_request_duration_seconds` - Request latency
-- `beon_ip_lookups_total` - IP lookup count
-- `beon_cache_hits_total` - Redis cache hits
-- `beon_database_queries_total` - PostgreSQL queries
-
----
-
-## 📊 Threat Feed Sources
-
-BEON-IPQuality aggregates data from 21 threat intelligence feeds:
-
-| Feed | Type | Description |
-|------|------|-------------|
-| Firehol Level 1-4 | Aggregated | Multiple blocklists combined |
-| Emerging Threats | Compromised | Known compromised IPs |
-| Tor Exit Nodes | Anonymizer | Tor network exits |
-| Spamhaus DROP | Spam | Spam networks |
-| Abuse.ch | Malware | Malware/Botnet C2 |
-| Blocklist.de | Brute Force | SSH/FTP attackers |
-| DShield | Attacks | Active attackers |
-| Talos Intelligence | Threats | Cisco threat intel |
-| *And 13 more...* | Various | Multiple sources |
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    BEON-IPQuality System                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────┐    ┌─────────┐    ┌─────────────────────────┐ │
-│  │  Nginx  │───▶│   API   │───▶│  PostgreSQL (1.6M IPs) │ │
-│  │ :80/443 │    │  :8080  │    │       + Redis Cache     │ │
-│  └─────────┘    └─────────┘    └─────────────────────────┘ │
-│                      │                                      │
-│                      ▼                                      │
-│              ┌─────────────┐                                │
-│              │    MMDB     │  (Optional compiled DB)        │
-│              │  < 1ms      │                                │
-│              └─────────────┘                                │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │  Ingestor (Cron every 4h)                               ││
-│  │  - Fetches 21 threat feeds                              ││
-│  │  - Updates 1.6M+ IP entries                             ││
-│  └─────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📜 License
-
-MIT License - see [LICENSE](LICENSE) file.
-
----
-
-## 🙏 Credits & Attribution
-
-### Threat Intelligence Feeds
-
-Thanks to these amazing open-source threat intelligence providers:
-
-| Provider | Website | License |
-|----------|---------|---------|
-| **FireHOL IP Lists** | [iplists.firehol.org](https://iplists.firehol.org/) | GPL |
-| **Emerging Threats** | [rules.emergingthreats.net](https://rules.emergingthreats.net/) | BSD |
-| **Tor Project** | [torproject.org](https://www.torproject.org/) | BSD |
-| **Spamhaus** | [spamhaus.org](https://www.spamhaus.org/) | Spamhaus License |
-| **Abuse.ch** | [abuse.ch](https://abuse.ch/) | CC0 |
-| **Blocklist.de** | [blocklist.de](https://www.blocklist.de/) | GPL |
-| **DShield** | [dshield.org](https://www.dshield.org/) | CC BY-NC-SA |
-| **GreenSnow** | [greensnow.co](https://greensnow.co/) | Free |
-| **CINS Score** | [cinsscore.com](https://cinsscore.com/) | Free |
-| **Binary Defense** | [binarydefense.com](https://www.binarydefense.com/) | Free |
-| **Stamparm** | [github.com/stamparm](https://github.com/stamparm/ipsum) | GPL |
-| **IPSum** | [github.com/stamparm/ipsum](https://github.com/stamparm/ipsum) | GPL |
-
-### GeoIP Data
-
-- **MaxMind GeoLite2** - [maxmind.com](https://www.maxmind.com/) - CC BY-SA 4.0
-
-### Open Source Libraries
-
-| Library | Purpose | License |
-|---------|---------|---------|
-| [Fiber](https://gofiber.io/) | Web Framework | MIT |
-| [pgx](https://github.com/jackc/pgx) | PostgreSQL Driver | MIT |
-| [go-redis](https://github.com/redis/go-redis) | Redis Client | BSD-2 |
-| [maxminddb-golang](https://github.com/oschwald/maxminddb-golang) | MMDB Reader | ISC |
-| [mmdbwriter](https://github.com/maxmind/mmdbwriter) | MMDB Writer | Apache 2.0 |
-| [viper](https://github.com/spf13/viper) | Configuration | MIT |
-| [zap](https://github.com/uber-go/zap) | Logging | MIT |
-
-### Inspired By
-
-- [IPQualityScore](https://www.ipqualityscore.com/)
-- [Proxycheck.io](https://proxycheck.io/)
-- [IP2Location](https://www.ip2location.com/)
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please open an issue or pull request.
-
----
-
-## 👨‍💻 Author
-
-**BEON Team**
-
-- GitHub: [@afuzapratama](https://github.com/afuzapratama)
-
----
-
-Made with ❤️ in Indonesia 🇮🇩
+| Kebutuhan | vCPU ARM64 | RAM | SSD/NVMe |
+|---|---:|---:|---:|
+| Baseline pilot terkurasi awal | 2 | 4 GB | 30 GB |
+| VPS aktif; dataset gabungan diuji di staging | 4 | 8 GB | 30 GB persisten + 220 GB sementara |
+| Rekomendasi awal produksi satu node | 4 | 8 GB | 80 GB |
+| Estimasi untuk dataset/traffic lebih besar | 8 | 16 GB | 160 GB |
+
+Ukuran storage target serta baris pertumbuhan merupakan estimasi dengan headroom.
+VPS 4 vCPU/8 GB sudah menjalani satu run pipeline gabungan terisolasi;
+kapasitas beban produksi berkelanjutan belum diukur. Feed jutaan baris masih membutuhkan optimasi dan
+pengukuran; FireHOL Anonymous belum aktif karena ingest mengalami OOM pada cap
+1 GiB. Peak compiler dataset terkurasi sekitar 492 MiB.
+
+Pilot memakai `REDIS_ENABLED=false` berdasarkan perbandingan singkat loopback;
+container Redis tetap tersedia. Hasil tersebut belum mewakili traffic publik,
+variasi IP luas, atau beban berkelanjutan. Angka mentah dan batas pengujian ada
+di [bukti kapasitas phase 6](docs/evidence/phase6-arm-capacity-2026-10-12.json).
+
+## Pekerjaan berikutnya
+
+1. Isi dan review [korpus label independen](docs/LABEL_REVIEW_WORKFLOW.md), lalu
+   ukur precision/recall/false positive. Sampel dari source training bukan holdout.
+2. Perluas pengujian beban HTTPS dan ukur pertumbuhan disk/history dalam beberapa
+   hari. Probe lima menit/1.500 request sudah lulus, belum kapasitas puncak atau SLO.
+3. Lakukan full disaster-recovery drill untuk RTO final. Rollback aplikasi dan
+   warm reboot sudah lulus; restore DB/MMDB terisolasi dan offsite backup valid.
+
+Hasil yang sudah terukur: [validasi rc4](docs/OPERATIONS_RC4_VALIDATION.md).
+Checklist pelaksanaan mengikuti [tracker phase perbaikan](docs/PHASE_PERBAIKAN_DAN_VPS_ARM.md).
+
+Alur validasi berikutnya: [review label independen](docs/LABEL_REVIEW_WORKFLOW.md) dan [uji restore Bunny pada host terpisah](docs/DISASTER_RECOVERY_DRILL.md). Sampel diagnostik bukan ground truth; bobot/threshold tidak dituning tanpa label yang terverifikasi.

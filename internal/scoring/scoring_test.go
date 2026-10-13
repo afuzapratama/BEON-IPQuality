@@ -44,14 +44,14 @@ func TestCalculateScore(t *testing.T) {
 			maxScore: 100,
 		},
 		{
-			name: "Multiple threats should increase score",
+			name: "Correlated anonymity lists keep strongest signal",
 			threats: []models.Threat{
 				{ThreatType: "tor", Confidence: 1.0, LastSeen: now},
 				{ThreatType: "proxy", Confidence: 0.8, LastSeen: now},
 			},
 			asnInfo:  nil,
-			minScore: 80,
-			maxScore: 100,
+			minScore: 70,
+			maxScore: 70,
 		},
 		{
 			name: "Datacenter ASN adds bonus",
@@ -59,7 +59,7 @@ func TestCalculateScore(t *testing.T) {
 				{ThreatType: "proxy", Confidence: 0.8, LastSeen: now},
 			},
 			asnInfo:  &models.ASNInfo{ASN: 14061, ASNType: "datacenter"},
-			minScore: 50,
+			minScore: 49,
 			maxScore: 90,
 		},
 	}
@@ -71,6 +71,17 @@ func TestCalculateScore(t *testing.T) {
 				t.Errorf("CalculateScore() = %d, want between %d and %d", score, tt.minScore, tt.maxScore)
 			}
 		})
+	}
+}
+
+func TestCalculateScoreUsesFeedWeight(t *testing.T) {
+	scorer := NewDefault()
+	now := time.Now()
+	score := scorer.CalculateScore([]models.Threat{{
+		ThreatType: "proxy", Weight: 90, Confidence: 1, LastSeen: now,
+	}}, nil, now)
+	if score != 90 {
+		t.Fatalf("score = %d, want 90 (source weight without a duplicate confidence bonus)", score)
 	}
 }
 

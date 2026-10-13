@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh private Avastel account feed and publish MMDB
+After=docker.service beon-avastel-source.service
+Requires=beon-avastel-source.service
+[Service]
+Type=oneshot
+Environment=PROJECT_ROOT=/opt/beon-ipquality
+Environment=AVASTEL_KEY_FILE=/etc/beon-ipquality/avastel.key
+ExecStart=/usr/bin/python3 /opt/beon-ipquality/scripts/avastel-sync.py refresh
+UMask=0077
+TimeoutStartSec=1500
+MemoryMax=768M

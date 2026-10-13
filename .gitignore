@@ -106,3 +106,7 @@ node_modules/
 
 # Vendor (uncomment to ignore)
 # vendor/
+
+# GeoIP updater runtime lock
+data/mmdb/.geoipupdate.lock
+backups/

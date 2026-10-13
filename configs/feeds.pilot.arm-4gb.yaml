@@ -1,0 +1,399 @@
+# Pilot VPS ARM 4 GB: large/empty feeds and duplicate source URLs excluded.
+# See docs/VPS_ARM_PILOT_2026-10-12.md before enabling additional sources.
+feeds:
+  tor_exit_nodes:
+    enabled: true
+    name: Tor Exit Nodes
+    description: Official Tor Project exit node list
+    threat_type: tor
+    confidence: 1.0
+    weight: 70
+    schedule: '@hourly'
+    sources:
+    - url: https://check.torproject.org/torbulkexitlist
+      format: plain
+      name: torproject_bulk
+  spamhaus_drop:
+    enabled: true
+    name: Spamhaus DROP
+    description: Don't Route Or Peer - Hijacked netblocks
+    threat_type: hijacked
+    confidence: 1.0
+    weight: 95
+    schedule: '@daily'
+    sources:
+    - url: https://www.spamhaus.org/drop/drop.txt
+      format: cidr_comments
+      name: drop
+  firehol_level1:
+    enabled: true
+    name: FireHOL Level 1
+    description: FireHOL Level 1 - High confidence blocklist
+    threat_type: malicious
+    confidence: 0.95
+    weight: 85
+    schedule: 0 */2 * * *
+    sources:
+    - url: https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset
+      format: netset
+      name: level1
+  firehol_level2:
+    enabled: true
+    name: FireHOL Level 2
+    description: FireHOL Level 2 - Medium confidence
+    threat_type: suspicious
+    confidence: 0.8
+    weight: 75
+    schedule: 0 */4 * * *
+    sources:
+    - url: https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level2.netset
+      format: netset
+      name: level2
+  firehol_anonymous:
+    enabled: false
+    name: FireHOL Anonymous
+    description: Anonymous proxies and VPNs
+    threat_type: anonymous
+    confidence: 0.85
+    weight: 60
+    schedule: 0 */3 * * *
+    sources:
+    - url: https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_anonymous.netset
+      format: netset
+      name: anonymous
+  abuse_feodo:
+    enabled: true
+    name: Abuse.ch Feodo Tracker
+    description: Botnet C2 servers (Emotet, Dridex, TrickBot)
+    threat_type: botnet_c2
+    confidence: 1.0
+    weight: 90
+    schedule: '*/5 * * * *'
+    sources:
+    - url: https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt
+      format: plain_comments
+      name: feodo_recommended
+    - url: https://feodotracker.abuse.ch/downloads/ipblocklist.txt
+      format: plain_comments
+      name: feodo_full
+  abuse_sslbl:
+    enabled: false
+    name: Abuse.ch SSL Blacklist
+    description: Malicious SSL certificates
+    threat_type: malware
+    confidence: 0.95
+    weight: 85
+    schedule: '*/15 * * * *'
+    sources:
+    - url: https://sslbl.abuse.ch/blacklist/sslipblacklist.txt
+      format: plain_comments
+      name: sslbl
+  proxy_lists:
+    enabled: true
+    name: Public Proxy Lists
+    description: Community-maintained proxy lists
+    threat_type: proxy
+    confidence: 0.6
+    weight: 40
+    schedule: '@hourly'
+    sources:
+    - url: https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt
+      format: ip_port
+      name: speedx_http
+    - url: https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt
+      format: ip_port
+      name: speedx_socks4
+    - url: https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt
+      format: ip_port
+      name: speedx_socks5
+    - url: https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt
+      format: ip_port
+      name: proxifly
+  datacenter_ips:
+    enabled: false
+    name: Datacenter IPs
+    description: Known datacenter and hosting provider IPs
+    threat_type: datacenter
+    confidence: 0.9
+    weight: 50
+    schedule: '@weekly'
+    sources:
+    - url: https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt
+      format: plain
+      name: x4b_datacenter
+  vpn_providers:
+    enabled: false
+    name: VPN Provider IPs
+    description: Known VPN provider exit IPs
+    threat_type: vpn
+    confidence: 0.85
+    weight: 45
+    schedule: '@daily'
+    sources:
+    - url: https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt
+      format: plain
+      name: x4b_vpn
+  emerging_threats:
+    enabled: true
+    name: Emerging Threats
+    description: Proofpoint Emerging Threats blocklist
+    threat_type: malicious
+    confidence: 0.85
+    weight: 80
+    schedule: '@daily'
+    sources:
+    - url: https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt
+      format: plain_comments
+      name: et_block
+  blocklist_de:
+    enabled: true
+    name: Blocklist.de
+    description: IPs reported for attacks (SSH, FTP, etc)
+    threat_type: attack
+    confidence: 0.75
+    weight: 65
+    schedule: '@hourly'
+    sources:
+    - url: https://lists.blocklist.de/lists/all.txt
+      format: plain
+      name: all
+  cinsscore:
+    enabled: true
+    name: CI Army Bad IPs
+    description: Collective Intelligence Network Security bad IPs
+    threat_type: malicious
+    confidence: 0.8
+    weight: 70
+    schedule: '@hourly'
+    sources:
+    - url: https://cinsscore.com/list/ci-badguys.txt
+      format: plain
+      name: ci_badguys
+  alienvault_reputation:
+    enabled: true
+    name: AlienVault IP Reputation
+    description: AlienVault Open Threat Exchange reputation data
+    threat_type: malicious
+    confidence: 0.85
+    weight: 75
+    schedule: '@daily'
+    sources:
+    - url: https://reputation.alienvault.com/reputation.generic
+      format: plain_comments
+      name: otx_reputation
+  binarydefense:
+    enabled: true
+    name: Binary Defense Ban List
+    description: Binary Defense threat intelligence
+    threat_type: malicious
+    confidence: 0.85
+    weight: 75
+    schedule: '@hourly'
+    sources:
+    - url: https://www.binarydefense.com/banlist.txt
+      format: plain_comments
+      name: banlist
+  bruteforce:
+    enabled: true
+    name: Bruteforce Blocker
+    description: IPs caught in bruteforce attacks
+    threat_type: bruteforce
+    confidence: 0.7
+    weight: 60
+    schedule: '@hourly'
+    sources:
+    - url: https://danger.rulez.sk/projects/bruteforceblocker/blist.php
+      format: plain_comments
+      name: rulez_bruteforce
+  myip_blacklist:
+    enabled: false
+    name: MyIP.MS Blacklist
+    description: Full bogon and blackhole list
+    threat_type: bogon
+    confidence: 0.9
+    weight: 80
+    schedule: '@weekly'
+    sources:
+    - url: https://myip.ms/files/blacklist/general/full_blacklist_database.zip
+      format: zip_plain
+      name: myip_full
+      enabled: false
+  stamparm_ipsum:
+    enabled: true
+    name: IPsum Threat Intelligence
+    description: Daily feed of IPs from multiple threat lists
+    threat_type: malicious
+    confidence: 0.9
+    weight: 80
+    schedule: '@daily'
+    sources:
+    - url: https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt
+      format: plain_comments
+      name: ipsum_level3
+    - url: https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt
+      format: plain_comments
+      name: ipsum_level4
+  greensnow:
+    enabled: true
+    name: GreenSnow Blocklist
+    description: Team Cymru & GreenSnow threat data
+    threat_type: attack
+    confidence: 0.75
+    weight: 65
+    schedule: '@hourly'
+    sources:
+    - url: https://blocklist.greensnow.co/greensnow.txt
+      format: plain
+      name: greensnow
+  urlhaus:
+    enabled: true
+    name: URLhaus Malware
+    description: Abuse.ch URLhaus malware hosting IPs
+    threat_type: malware
+    confidence: 0.95
+    weight: 85
+    schedule: '*/30 * * * *'
+    sources:
+    - url: https://urlhaus.abuse.ch/downloads/text/
+      format: url
+      name: urlhaus_ip_text
+  talos_blacklist:
+    enabled: false
+    name: Cisco Talos Blacklist
+    description: Cisco Talos threat intelligence
+    threat_type: malicious
+    confidence: 0.9
+    weight: 85
+    schedule: '@daily'
+    sources:
+    - url: https://www.talosintelligence.com/documents/ip-blacklist
+      format: plain
+      name: talos_ip
+  proxy_lists_extended:
+    enabled: true
+    name: Extended Public Proxy Lists
+    description: Additional community proxy lists from multiple aggregators
+    threat_type: proxy
+    confidence: 0.65
+    weight: 45
+    schedule: '@hourly'
+    sources:
+    - url: https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt
+      format: ip_port
+      name: monosans_http
+    - url: https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt
+      format: ip_port
+      name: monosans_socks4
+    - url: https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt
+      format: ip_port
+      name: monosans_socks5
+    - url: https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt
+      format: ip_port
+      name: clarketm
+    - url: https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&country=all&timeout=5000&proxy_format=ipport&format=text
+      format: ip_port
+      name: proxyscrape_all
+  socks5_lists:
+    enabled: true
+    name: SOCKS5 Proxy Lists
+    description: Dedicated SOCKS5 proxy aggregators
+    threat_type: proxy
+    confidence: 0.7
+    weight: 50
+    schedule: '@hourly'
+    sources:
+    - url: https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt
+      format: ip_port
+      name: hookzof_socks5
+    - url: https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt
+      format: ip_port
+      name: speedx_socks5_new
+  vpn_extended:
+    enabled: true
+    name: Extended VPN Provider IP Ranges
+    description: Additional known VPN provider ASN ranges
+    threat_type: vpn
+    confidence: 0.9
+    weight: 50
+    schedule: '@daily'
+    sources:
+    - url: https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt
+      format: plain
+      name: x4b_vpn_v4
+    - url: https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv6.txt
+      format: plain
+      name: x4b_vpn_v6
+  datacenter_extended:
+    enabled: true
+    name: Extended Datacenter IP Ranges
+    description: Comprehensive datacenter & cloud provider IP ranges
+    threat_type: datacenter
+    confidence: 0.92
+    weight: 50
+    schedule: '@weekly'
+    sources:
+    - url: https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt
+      format: plain
+      name: x4b_dc_v4
+    - url: https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv6.txt
+      format: plain
+      name: x4b_dc_v6
+  tor_extended:
+    enabled: true
+    name: Tor Extended Lists
+    description: Additional Tor node lists including non-exit relays
+    threat_type: tor
+    confidence: 0.95
+    weight: 65
+    schedule: '@hourly'
+    sources:
+    - url: https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst
+      format: plain
+      name: secops_tor_exit
+  mirai_tracker:
+    enabled: false
+    name: Mirai Botnet Tracker
+    description: IPs observed in Mirai botnet attacks
+    threat_type: botnet_c2
+    confidence: 0.85
+    weight: 80
+    schedule: '@hourly'
+    sources:
+    - url: https://mirai.security.gives/data/ip_list.txt
+      format: plain
+      name: mirai_ips
+formats:
+  plain:
+    description: One IP per line, no comments
+    comment_prefix: null
+  plain_comments:
+    description: 'One IP per line, # comments'
+    comment_prefix: '#'
+  cidr_comments:
+    description: CIDR notation with ; comments
+    comment_prefix: ;
+  netset:
+    description: FireHOL netset format
+    comment_prefix: '#'
+  ip_port:
+    description: IP:PORT format
+    comment_prefix: '#'
+    separator: ':'
+  url:
+    description: URL with an IP address as host
+    comment_prefix: '#'
+whitelist:
+  enabled: true
+  sources:
+  - name: google_bots
+    ranges:
+    - 66.249.64.0/19
+    - 64.233.160.0/19
+  - name: cloudflare
+    url: https://www.cloudflare.com/ips-v4
+  - name: local
+    ranges:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 127.0.0.0/8

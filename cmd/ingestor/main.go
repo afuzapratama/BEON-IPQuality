@@ -12,6 +12,7 @@ import (
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
 	"github.com/lfrfrfr/beon-ipquality/internal/database"
 	"github.com/lfrfrfr/beon-ipquality/internal/ingestor"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	pkglogger "github.com/lfrfrfr/beon-ipquality/pkg/logger"
 )
 
@@ -43,7 +44,7 @@ func main() {
 
 	// Load configuration
 	printProgress("Loading configuration...")
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadFromEnv(*configPath)
 	if err != nil {
 		printError("Failed to load configuration: %v", err)
 		os.Exit(1)
@@ -79,16 +80,7 @@ func main() {
 
 	// Connect to database
 	printProgress("Connecting to PostgreSQL database...")
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.Database.Postgres.Username,
-		cfg.Database.Postgres.Password,
-		cfg.Database.Postgres.Host,
-		cfg.Database.Postgres.Port,
-		cfg.Database.Postgres.Database,
-		cfg.Database.Postgres.SSLMode,
-	)
-
-	db, err := database.NewPostgresDB(dsn, cfg.Database.Postgres.MaxConnections, cfg.Database.Postgres.MinConnections)
+	db, err := database.NewPostgresDB(cfg.Database.Postgres.DSN(), cfg.Database.Postgres.MaxConnections, cfg.Database.Postgres.MinConnections)
 	if err != nil {
 		printError("Failed to connect to database: %v", err)
 		os.Exit(1)
@@ -145,10 +137,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	if cfg.Metrics.Enabled {
+		if err := internalmetrics.Serve(ctx, cfg.Metrics.Host, cfg.Metrics.Port, cfg.Metrics.Path); err != nil {
+			pkglogger.Fatal(fmt.Sprintf("Cannot start pipeline metrics: %v", err))
+		}
+	}
+
 	// Daemon mode
 	go func() {
 		if err := ing.Start(ctx); err != nil {
-			pkglogger.Error(fmt.Sprintf("Ingestor error: %v", err))
+			pkglogger.Fatal(fmt.Sprintf("Ingestor startup failed: %v", err))
 		}
 	}()
 

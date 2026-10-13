@@ -1,0 +1,10 @@
+{
+  "boot_id_before": "28f6b126-3d2d-4bd1-b5a2-794ad524e655",
+  "boot_id_after": "f5870a7b-f560-44c7-87bc-c72b7bf9cb3c",
+  "ssh_ready_seconds": 21.309510684004636,
+  "https_healthy_seconds": 28.668348574006814,
+  "version": "v1.1.0-rc.4",
+  "snapshot_stale": false,
+  "checks": "beon-ipquality-api-1 Up 10 seconds (healthy)\nbeon-ipquality-compiler-1 Up 10 seconds\nbeon-ipquality-ingestor-1 Up 10 seconds\nsl-a249ebf2bedd-proxy-1 Up 11 seconds\nbeon-ipquality-postgres-1 Up 10 seconds (healthy)\nbeon-ipquality-redis-1 Up 11 seconds (healthy)\nsl-a249ebf2bedd-agent-1 Up 11 seconds\n/mnt/beon-scratch is a mountpoint\nactive\nactive\nactive\nactive\nactive\nactive\n",
+  "scope": "Warm guest reboot; not Azure deallocation/reimage or disaster restore"
+}

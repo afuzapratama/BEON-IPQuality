@@ -1,0 +1,10 @@
+[Unit]
+Description=Twice-weekly MaxMind update for BEON-IPQuality
+
+[Timer]
+OnCalendar=Wed,Sat *-*-* 12:00:00 Asia/Jakarta
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

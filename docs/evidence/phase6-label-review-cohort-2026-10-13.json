@@ -1,0 +1,14 @@
+{
+  "samples": 258,
+  "approved_independent": 0,
+  "data_version": "e7e146d957d3700f0318206806e48271e788f27dd10ea1ab3776e4f523fbcdd5",
+  "source_sha256": "dc2b91caf2f76911a8ce640b9c2aa89967ea5e95e083d16a7ded99b0bac619a3",
+  "predicted_counts": {
+    "proxy": 250,
+    "vpn": 4,
+    "tor": 0,
+    "datacenter": 11,
+    "risky": 4
+  },
+  "interpretation": "Diagnostic feed-derived cohort; no ground truth, precision or recall. Reviewers receive only reviews-blinded.jsonl; overlap review required. Independent positive and negative observations still needed."
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=BEON lightweight host monitoring
+After=network-online.target
+[Service]
+User=glances
+ExecStart=/opt/beon-monitor/bin/glances -w -B 127.0.0.1 -p 61208 -t 5 --disable-check-update --hide-public-info
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=192M
+[Install]
+WantedBy=multi-user.target

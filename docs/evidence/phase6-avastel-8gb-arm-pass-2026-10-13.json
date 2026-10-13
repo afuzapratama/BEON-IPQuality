@@ -1,0 +1,116 @@
+{
+  "started_at": "2026-10-12T22:25:34.000381+00:00",
+  "architecture": "aarch64",
+  "source_sha256": "dc2b91caf2f76911a8ce640b9c2aa89967ea5e95e083d16a7ded99b0bac619a3",
+  "production_enabled": false,
+  "scope": "Combined active pilot snapshot + account proxy-positive IPs on ARM; isolated DB/network/MMDB",
+  "memory_limits": {
+    "postgres": "384MiB",
+    "ingestor": "896MiB",
+    "compiler": "2560MiB"
+  },
+  "cpu_limits": {
+    "postgres": 0.5,
+    "worker": 1.0
+  },
+  "pressure_abort_mib": 600,
+  "stages": {
+    "ingestor": {
+      "elapsed_seconds": 68.60165297000003,
+      "exit_code": 0,
+      "oom_killed": false,
+      "process_hwm_bytes_sampled": 615813120,
+      "cgroup_peak_bytes_sampled": 607801344,
+      "aborted": null
+    },
+    "compiler": {
+      "elapsed_seconds": 53.745664799,
+      "exit_code": 0,
+      "oom_killed": false,
+      "process_hwm_bytes_sampled": 2084384768,
+      "cgroup_peak_bytes_sampled": 2093694976,
+      "aborted": null
+    }
+  },
+  "images": {
+    "postgres": "postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+    "ingestor": "ghcr.io/afuzapratama/beon-ipquality-ingestor@sha256:a54722b984f0350d322b7cc6cf8e038246da2a90811b631be04fe16760f250b9",
+    "compiler": "ghcr.io/afuzapratama/beon-ipquality-compiler@sha256:b5857379e49182b3a3b6cc1c5443821a310f192a6cf7d15e682fb93b5c736f22",
+    "api": "ghcr.io/afuzapratama/beon-ipquality-api@sha256:e32d7fd2f8b293f58269cd54491ad652bfed6219dce4de39b49956e5c32337f2"
+  },
+  "compiler_binary_sha256": "2836c40a9ca3bdc27bda2229b78e69e689ff9603bdc9c686987f826396e8f1e7",
+  "compiler_binary_mode": "Candidate binary mounted over release compiler; production image unchanged",
+  "baseline_active_rows": 210740,
+  "combined_active_rows": 1210128,
+  "staging_database_bytes": 596694707,
+  "verification": {
+    "asn": {
+      "build_epoch": 1791792943,
+      "database_type": "GeoLite2-ASN"
+    },
+    "geoip": {
+      "build_epoch": 1791564728,
+      "database_type": "GeoLite2-City"
+    },
+    "reputation": {
+      "binary_format": 2,
+      "build_epoch": 1791844022,
+      "database_type": "BEON-IPReputation",
+      "ip_version": 6,
+      "node_count": 8071188,
+      "record_size": 28
+    },
+    "version": "917e0fa05a34394e9e59b67d5d174a294b6f7005eb40c44807c0167f2f004447"
+  },
+  "mmdb_bytes": 60588365,
+  "completed_at": "2026-10-12T22:27:54.277206+00:00",
+  "passed": true,
+  "passed_scope": "One isolated combined dataset pipeline + API integration run; not sustained production SLO or independent accuracy",
+  "api_check": {
+    "health": "healthy",
+    "snapshot_stale": false,
+    "samples": 100,
+    "proxy_true": 100,
+    "whitelisted": 0,
+    "risky_true": 2,
+    "score_min": 32,
+    "score_max": 65,
+    "data_versions": [
+      "917e0fa05a34394e9e59b67d5d174a294b6f7005eb40c44807c0167f2f004447"
+    ],
+    "whitelist_passed": true,
+    "ipv6_passed": true,
+    "auth_passed": true,
+    "interpretation": "Integration on ingested data; not independent accuracy",
+    "api_image": "ghcr.io/afuzapratama/beon-ipquality-api@sha256:e32d7fd2f8b293f58269cd54491ad652bfed6219dce4de39b49956e5c32337f2"
+  },
+  "go_memory_targets": {
+    "ingestor": "700MiB",
+    "compiler": "1800MiB"
+  },
+  "host": {
+    "vcpus": 4,
+    "ram_mib": 7904,
+    "temporary_nvme_gb": 220,
+    "staging_root": "/mnt/beon-scratch/staging/avastel-8gb-20261013"
+  },
+  "candidate_source_revision": "fccd317",
+  "production_runtime": "v1.1.0-rc.3",
+  "production_compiler_limit": "1536MiB",
+  "production_postcheck": {
+    "health": "healthy",
+    "snapshot_stale": false,
+    "alert_checker_result": "success"
+  },
+  "cleanup": {
+    "containers_and_network_removed": true,
+    "temporary_uploads_removed": true,
+    "scratch_bind_data_and_artifacts_retained_privately": true
+  },
+  "activation_gates": [
+    "Account dataset derived API use not established",
+    "Candidate binary not yet released/deployed immutably",
+    "Independent labeled holdout incomplete",
+    "Sustained/public TLS workload and reboot/rollback gates incomplete"
+  ]
+}

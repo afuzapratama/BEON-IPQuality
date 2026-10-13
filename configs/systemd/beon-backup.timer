@@ -1,0 +1,8 @@
+[Unit]
+Description=BEON daily local backup
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Jakarta
+RandomizedDelaySec=15m
+Persistent=true
+[Install]
+WantedBy=timers.target

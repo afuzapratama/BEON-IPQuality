@@ -20,12 +20,6 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 5s
 
-  - job_name: 'ipquality-judge'
-    static_configs:
-      - targets: ['judge:8081']
-    metrics_path: '/metrics'
-    scrape_interval: 5s
-
   - job_name: 'redis'
     static_configs:
       - targets: ['redis-exporter:9121']
@@ -34,6 +28,10 @@ scrape_configs:
     static_configs:
       - targets: ['postgres-exporter:9187']
 
-  - job_name: 'clickhouse'
+  - job_name: 'ipquality-ingestor'
     static_configs:
-      - targets: ['clickhouse:9363']
+      - targets: ['ingestor:9091']
+
+  - job_name: 'ipquality-compiler'
+    static_configs:
+      - targets: ['compiler:9092']

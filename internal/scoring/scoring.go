@@ -9,6 +9,7 @@ import (
 
 // Config holds scoring configuration
 type Config struct {
+	SourceWeights map[string]int
 	// Base weights for each threat type
 	ThreatWeights map[string]int
 
@@ -22,12 +23,6 @@ type Config struct {
 	// Score bounds
 	MinScore int
 	MaxScore int
-
-	// Multipliers
-	MultiThreatMultiplier   float64
-	DatacenterMultiplier    float64
-	HighConfidenceThreshold float64
-	HighConfidenceBonus     int
 }
 
 // DefaultConfig returns the default scoring configuration
@@ -39,12 +34,16 @@ func DefaultConfig() Config {
 			"proxy":      50,
 			"datacenter": 40,
 			"botnet_c2":  95,
+			"botnet":     90,
 			"malware":    90,
+			"malicious":  85,
 			"spam":       60,
 			"hijacked":   95,
 			"attack":     75,
 			"suspicious": 55,
-			"malicious":  85,
+			"anonymous":  50, // firehol_anonymous: anonymous proxies/VPNs
+			"hosting":    35,
+			"bruteforce": 60, // brute force attackers (blocklist.de, rulez.sk)
 		},
 		ASNTypeModifiers: map[string]int{
 			"datacenter": 15,
@@ -54,14 +53,10 @@ func DefaultConfig() Config {
 			"education":  -20,
 			"government": -25,
 		},
-		DecayLambda:             0.01,                 // ~70 day half-life
-		MaxAge:                  180 * 24 * time.Hour, // 180 days
-		MinScore:                0,
-		MaxScore:                100,
-		MultiThreatMultiplier:   1.1,
-		DatacenterMultiplier:    1.15,
-		HighConfidenceThreshold: 0.9,
-		HighConfidenceBonus:     5,
+		DecayLambda: 0.01,                 // ~70 day half-life
+		MaxAge:      180 * 24 * time.Hour, // 180 days
+		MinScore:    0,
+		MaxScore:    100,
 	}
 }
 
@@ -80,76 +75,9 @@ func NewDefault() *Scorer {
 	return New(DefaultConfig())
 }
 
-// CalculateScore calculates the risk score for an IP based on threat data
-// Formula: S = min(100, Σ(W×K×C) × D(t) × M)
-// Where:
-//   - W = Weight of threat type
-//   - K = Confidence factor from source
-//   - C = Source credibility (0.0-1.0)
-//   - D(t) = Time decay function: e^(-λt) where t is days since last seen
-//   - M = Multipliers (multi-threat, datacenter, etc.)
+// CalculateScore applies the versioned conservative evidence policy.
 func (s *Scorer) CalculateScore(threats []models.Threat, asnInfo *models.ASNInfo, now time.Time) int {
-	if len(threats) == 0 {
-		return s.config.MinScore
-	}
-
-	var totalScore float64
-	threatTypes := make(map[string]bool)
-
-	for _, threat := range threats {
-		// Get base weight for threat type
-		weight := s.getThreatWeight(threat.ThreatType)
-
-		// Apply confidence factor
-		confidence := threat.Confidence
-		if confidence <= 0 {
-			confidence = 0.5 // Default confidence
-		}
-
-		// Calculate time decay
-		decay := s.calculateDecay(threat.LastSeen, now)
-
-		// Calculate contribution from this threat
-		contribution := float64(weight) * confidence * decay
-
-		totalScore += contribution
-		threatTypes[threat.ThreatType] = true
-	}
-
-	// Apply multi-threat multiplier if multiple different threat types found
-	if len(threatTypes) > 1 {
-		totalScore *= s.config.MultiThreatMultiplier
-	}
-
-	// Apply ASN type modifier
-	if asnInfo != nil {
-		modifier := s.getASNModifier(asnInfo.ASNType)
-		totalScore += float64(modifier)
-
-		// Additional datacenter multiplier
-		if asnInfo.ASNType == "datacenter" || asnInfo.ASNType == "hosting" {
-			totalScore *= s.config.DatacenterMultiplier
-		}
-	}
-
-	// Apply high confidence bonus
-	for _, threat := range threats {
-		if threat.Confidence >= s.config.HighConfidenceThreshold {
-			totalScore += float64(s.config.HighConfidenceBonus)
-			break // Only apply once
-		}
-	}
-
-	// Clamp score to bounds
-	score := int(math.Round(totalScore))
-	if score < s.config.MinScore {
-		score = s.config.MinScore
-	}
-	if score > s.config.MaxScore {
-		score = s.config.MaxScore
-	}
-
-	return score
+	return ScoreEvidence(s.Evidence(threats, asnInfo, now), s.config.MinScore, s.config.MaxScore)
 }
 
 // calculateDecay calculates the time decay factor

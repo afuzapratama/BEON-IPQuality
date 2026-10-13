@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -36,35 +37,54 @@ type RedisCache struct {
 	client *redis.Client
 	ttl    time.Duration
 	prefix string
-	hits   int64
-	misses int64
+	hits   atomic.Int64
+	misses atomic.Int64
 }
 
 // Config holds Redis cache configuration
 type Config struct {
-	Host     string
-	Port     int
-	Password string
-	DB       int
-	PoolSize int
-	TTL      time.Duration
-	Prefix   string
+	OperationTimeout time.Duration
+	URL              string
+	Host             string
+	Port             int
+	Password         string
+	DB               int
+	PoolSize         int
+	TTL              time.Duration
+	Prefix           string
 }
 
 // NewRedisCache creates a new Redis cache instance
 func NewRedisCache(cfg Config) (*RedisCache, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Password: cfg.Password,
-		DB:       cfg.DB,
-		PoolSize: cfg.PoolSize,
-	})
+	options := &redis.Options{
+		Addr: cfg.Host + ":" + fmt.Sprint(cfg.Port), Password: cfg.Password,
+		DB: cfg.DB, PoolSize: cfg.PoolSize,
+	}
+	if cfg.URL != "" {
+		parsed, err := redis.ParseURL(cfg.URL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Redis URL: %w", err)
+		}
+		options = parsed
+		if cfg.PoolSize > 0 {
+			options.PoolSize = cfg.PoolSize
+		}
+	}
+	timeout := cfg.OperationTimeout
+	if timeout <= 0 {
+		timeout = 50 * time.Millisecond
+	}
+	options.DialTimeout, options.ReadTimeout, options.WriteTimeout, options.PoolTimeout = timeout, timeout, timeout, timeout
+	options.ContextTimeoutEnabled = true
+	options.MaxRetries = -1
+	client := redis.NewClient(options)
 
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		client.Close()
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
@@ -78,7 +98,7 @@ func NewRedisCache(cfg Config) (*RedisCache, error) {
 		prefix = "ipq:"
 	}
 
-	logger.Info(fmt.Sprintf("Connected to Redis at %s:%d", cfg.Host, cfg.Port))
+	logger.Info(fmt.Sprintf("Connected to Redis at %s", options.Addr))
 
 	return &RedisCache{
 		client: client,
@@ -97,7 +117,7 @@ func (c *RedisCache) Get(ctx context.Context, ip string) (*models.IPCheckResult,
 	data, err := c.client.Get(ctx, c.key(ip)).Bytes()
 	if err != nil {
 		if err == redis.Nil {
-			c.misses++
+			c.misses.Add(1)
 			return nil, nil // Cache miss
 		}
 		return nil, err
@@ -108,7 +128,7 @@ func (c *RedisCache) Get(ctx context.Context, ip string) (*models.IPCheckResult,
 		return nil, fmt.Errorf("failed to unmarshal cached result: %w", err)
 	}
 
-	c.hits++
+	c.hits.Add(1)
 	result.Cached = true
 	return &result, nil
 }
@@ -150,8 +170,8 @@ func (c *RedisCache) Clear(ctx context.Context) error {
 		}
 	}
 
-	c.hits = 0
-	c.misses = 0
+	c.hits.Store(0)
+	c.misses.Store(0)
 	return nil
 }
 
@@ -177,15 +197,18 @@ func (c *RedisCache) Stats(ctx context.Context) (*CacheStats, error) {
 		}
 	}
 
+	hits := c.hits.Load()
+	misses := c.misses.Load()
+
 	stats := &CacheStats{
-		Hits:   c.hits,
-		Misses: c.misses,
+		Hits:   hits,
+		Misses: misses,
 		Keys:   keyCount,
 	}
 
-	total := c.hits + c.misses
+	total := hits + misses
 	if total > 0 {
-		stats.HitRate = float64(c.hits) / float64(total) * 100
+		stats.HitRate = float64(hits) / float64(total) * 100
 	}
 
 	// Parse memory usage from info string (simplified)

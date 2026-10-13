@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/spf13/viper"
 )
 
@@ -16,14 +18,15 @@ type FeedsConfig struct {
 
 // FeedConfig holds configuration for a single feed
 type FeedConfig struct {
-	Enabled     bool           `mapstructure:"enabled"`
-	Name        string         `mapstructure:"name"`
-	Description string         `mapstructure:"description"`
-	ThreatType  string         `mapstructure:"threat_type"`
-	Confidence  float64        `mapstructure:"confidence"`
-	Weight      int            `mapstructure:"weight"`
-	Schedule    string         `mapstructure:"schedule"`
-	Sources     []SourceConfig `mapstructure:"sources"`
+	ExternallyManaged bool           `mapstructure:"externally_managed"`
+	Enabled           bool           `mapstructure:"enabled"`
+	Name              string         `mapstructure:"name"`
+	Description       string         `mapstructure:"description"`
+	ThreatType        string         `mapstructure:"threat_type"`
+	Confidence        float64        `mapstructure:"confidence"`
+	Weight            int            `mapstructure:"weight"`
+	Schedule          string         `mapstructure:"schedule"`
+	Sources           []SourceConfig `mapstructure:"sources"`
 }
 
 // SourceConfig holds configuration for a feed source
@@ -67,8 +70,44 @@ func LoadFeeds(configPath string) (*FeedsConfig, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal feeds config: %w", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
+}
+
+// Validate catches enabled feeds that would otherwise fail silently at runtime.
+func (fc *FeedsConfig) Validate() error {
+	for key, feed := range fc.Feeds {
+		if !feed.Enabled {
+			continue
+		}
+		if strings.TrimSpace(feed.Name) == "" {
+			return fmt.Errorf("invalid feed %q: name is required", key)
+		}
+		if strings.TrimSpace(feed.Schedule) == "" {
+			return fmt.Errorf("invalid feed %q: schedule is required", key)
+		}
+		if _, err := cron.ParseStandard(feed.Schedule); err != nil {
+			return fmt.Errorf("invalid feed %q schedule: %w", key, err)
+		}
+		if len(feed.Sources) == 0 {
+			return fmt.Errorf("invalid feed %q: at least one source is required", key)
+		}
+		for _, source := range feed.Sources {
+			if strings.TrimSpace(source.URL) == "" || strings.TrimSpace(source.Name) == "" {
+				return fmt.Errorf("invalid feed %q: every source requires url and name", key)
+			}
+			if _, exists := fc.Formats[source.Format]; !exists {
+				return fmt.Errorf("invalid feed %q source %q: unknown format %q", key, source.Name, source.Format)
+			}
+		}
+	}
+	if fc.Whitelist.Enabled && len(fc.Whitelist.Sources) == 0 {
+		return fmt.Errorf("invalid whitelist: at least one source is required when enabled")
+	}
+	return nil
 }
 
 // GetEnabledFeeds returns only enabled feeds
@@ -80,6 +119,18 @@ func (fc *FeedsConfig) GetEnabledFeeds() map[string]FeedConfig {
 		}
 	}
 	return enabled
+}
+
+// GetIngestibleFeeds excludes feeds refreshed by a dedicated host publisher.
+// Compiler visibility and freshness still use GetEnabledFeeds.
+func (fc *FeedsConfig) GetIngestibleFeeds() map[string]FeedConfig {
+	feeds := fc.GetEnabledFeeds()
+	for name, feed := range feeds {
+		if feed.ExternallyManaged {
+			delete(feeds, name)
+		}
+	}
+	return feeds
 }
 
 // GetFeedByName returns a specific feed by name
@@ -107,4 +158,18 @@ func ParseSchedule(schedule string) (time.Duration, error) {
 		// Return 0 for cron expressions (need to be handled by cron parser)
 		return 0, nil
 	}
+}
+
+// FreshnessBudget allows one source schedule interval plus publication/retry time.
+func FreshnessBudget(schedule string, now time.Time, compile, reload, fetch time.Duration) (time.Duration, error) {
+	parsed, err := cron.ParseStandard(schedule)
+	if err != nil {
+		return 0, err
+	}
+	next := parsed.Next(now)
+	second := parsed.Next(next)
+	if next.IsZero() || second.IsZero() {
+		return 0, fmt.Errorf("schedule has no future run")
+	}
+	return second.Sub(next) + compile + reload + fetch, nil
 }

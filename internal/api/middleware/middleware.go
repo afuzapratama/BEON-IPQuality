@@ -1,19 +1,36 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+
 	"github.com/gofiber/fiber/v2"
 )
 
-// APIKeyAuth middleware validates API keys
-func APIKeyAuth() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		apiKey := c.Get("X-API-Key")
+// APIKeyAuth validates an API key against the configured secret. Hashing both
+// values first keeps the constant-time comparison length fixed.
+func APIKeyAuth(expectedKey string) fiber.Handler {
+	expectedHash := sha256.Sum256([]byte(expectedKey))
+	return APIKeyAuthWithValidator(func(key string) bool {
+		providedHash := sha256.Sum256([]byte(key))
+		return subtle.ConstantTimeCompare(providedHash[:], expectedHash[:]) == 1
+	})
+}
 
+// ValidateAPIKeyFn is the function type for API key validation.
+// Replace this at startup with a real database-backed implementation.
+type ValidateAPIKeyFn func(key string) bool
+
+// APIKeyAuthWithValidator delegates validation to fn. A missing validator
+// rejects every request so callers cannot accidentally enable permissive auth.
+func APIKeyAuthWithValidator(fn ValidateAPIKeyFn) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Allow health checks without API key
-		if c.Path() == "/health" {
+		if c.Path() == "/health" || c.Path() == "/metrics" {
 			return c.Next()
 		}
 
+		apiKey := c.Get("X-API-Key")
 		if apiKey == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error":   "missing_api_key",
@@ -21,10 +38,7 @@ func APIKeyAuth() fiber.Handler {
 			})
 		}
 
-		// TODO: Validate API key against database
-		// For now, accept any non-empty key
-		valid := validateAPIKey(apiKey)
-		if !valid {
+		if fn == nil || !fn(apiKey) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error":   "invalid_api_key",
 				"message": "The provided API key is invalid or expired.",
@@ -38,40 +52,10 @@ func APIKeyAuth() fiber.Handler {
 	}
 }
 
-// validateAPIKey checks if an API key is valid
-// TODO: Implement actual validation against database
-func validateAPIKey(key string) bool {
-	// Placeholder: accept any key that starts with "beon_"
-	if len(key) < 5 {
-		return false
+// AdminKeyAuth disables administration when no dedicated key is configured.
+func AdminKeyAuth(key string) fiber.Handler {
+	if key == "" {
+		return func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNotFound) }
 	}
-
-	// In production, this would:
-	// 1. Check if key exists in database
-	// 2. Check if key is enabled
-	// 3. Check if key has not expired
-	// 4. Check rate limits for the key
-
-	return true
-}
-
-// RateLimitByAPIKey applies rate limiting based on API key tier
-func RateLimitByAPIKey() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// apiKey := c.Locals("api_key")
-
-		// TODO: Get rate limit from API key tier
-		// For now, use default rate limit
-
-		return c.Next()
-	}
-}
-
-// RequestLogger logs incoming requests
-func RequestLogger() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// TODO: Log to ClickHouse for analytics
-
-		return c.Next()
-	}
+	return APIKeyAuth(key)
 }

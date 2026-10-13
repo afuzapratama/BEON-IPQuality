@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -11,17 +12,33 @@ import (
 
 	"github.com/lfrfrfr/beon-ipquality/internal/compiler"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
+	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	pkglogger "github.com/lfrfrfr/beon-ipquality/pkg/logger"
 )
 
 func main() {
 	// Parse command line flags
+	verifyDirectory := flag.String("verify-mmdb", "", "Validate an MMDB directory offline and exit")
 	configPath := flag.String("config", "./configs/config.yaml", "Path to configuration file")
+	skipInitial := flag.Bool("skip-initial", false, "Skip initial compilation after validating an existing MMDB")
 	oneshot := flag.Bool("oneshot", false, "Run compilation once and exit")
 	flag.Parse()
+	if *verifyDirectory != "" {
+		reader, err := mmdb.VerifyDirectory(*verifyDirectory)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer reader.Close()
+		if err := json.NewEncoder(os.Stdout).Encode(reader.Stats()); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadFromEnv(*configPath)
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
@@ -66,14 +83,29 @@ func main() {
 		pkglogger.Info(fmt.Sprintf("Compile interval: %v", compileInterval))
 	}
 
+	if *skipInitial {
+		reader, err := mmdb.NewReader(cfg.MMDB.OutputPath, "", "")
+		if err != nil {
+			pkglogger.Fatal(fmt.Sprintf("Cannot skip initial compilation without valid snapshot: %v", err))
+		}
+		reader.Close()
+	}
+	if cfg.Metrics.Enabled {
+		if err := internalmetrics.Serve(ctx, cfg.Metrics.Host, cfg.Metrics.Port, cfg.Metrics.Path); err != nil {
+			pkglogger.Fatal(fmt.Sprintf("Cannot start pipeline metrics: %v", err))
+		}
+	}
+
 	// Start periodic compilation
 	go func() {
 		ticker := time.NewTicker(compileInterval)
 		defer ticker.Stop()
 
 		// Run initial compilation
-		if err := comp.Compile(ctx); err != nil {
-			pkglogger.Error(fmt.Sprintf("Initial compilation failed: %v", err))
+		if !*skipInitial {
+			if err := comp.Compile(ctx); err != nil {
+				pkglogger.Error(fmt.Sprintf("Initial compilation failed: %v", err))
+			}
 		}
 
 		for {

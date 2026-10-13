@@ -1,115 +1,28 @@
-#!/bin/bash
-# MaxMind GeoIP Database Update Script
-# Run this script to download/update GeoLite2 databases
-
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-CONFIG_FILE="$PROJECT_ROOT/configs/GeoIP.conf"
-CONFIG_EXAMPLE="$PROJECT_ROOT/configs/GeoIP.conf.example"
-DATA_DIR="$PROJECT_ROOT/data/mmdb"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-echo -e "${GREEN}=== MaxMind GeoIP Database Updater ===${NC}"
-echo "Config: $CONFIG_FILE"
-echo "Output: $DATA_DIR"
-echo ""
-
-# Create data directory if not exists
-mkdir -p "$DATA_DIR"
-
-# Check if config file exists, if not create from example
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    if [[ -f "$CONFIG_EXAMPLE" ]]; then
-        echo -e "${YELLOW}Config file not found. Creating from example...${NC}"
-        cp "$CONFIG_EXAMPLE" "$CONFIG_FILE"
-        echo -e "${RED}IMPORTANT: Please edit $CONFIG_FILE with your MaxMind credentials!${NC}"
-        echo ""
-        echo "Get your free license key at: https://www.maxmind.com/en/geolite2/signup"
-        echo ""
-        echo "Then update these values in $CONFIG_FILE:"
-        echo "  AccountID YOUR_ACCOUNT_ID"
-        echo "  LicenseKey YOUR_LICENSE_KEY"
-        echo ""
-        exit 1
-    else
-        echo -e "${RED}Config file not found: $CONFIG_FILE${NC}"
-        echo "Please create the config file with your MaxMind credentials."
-        exit 1
-    fi
-fi
-
-# Check if config has placeholder values
-if grep -q "YOUR_ACCOUNT_ID\|YOUR_LICENSE_KEY" "$CONFIG_FILE"; then
-    echo -e "${RED}Please update $CONFIG_FILE with your real MaxMind credentials!${NC}"
-    echo ""
-    echo "Get your free license key at: https://www.maxmind.com/en/geolite2/signup"
-    exit 1
-fi
-
-# Check if geoipupdate is installed
-if ! command -v geoipupdate &> /dev/null; then
-    echo -e "${YELLOW}geoipupdate not found. Installing...${NC}"
-    
-    # Detect OS and install
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Check for package manager
-        if command -v apt-get &> /dev/null; then
-            echo "Installing via apt..."
-            sudo apt-get update
-            sudo apt-get install -y geoipupdate
-        elif command -v yum &> /dev/null; then
-            echo "Installing via yum..."
-            sudo yum install -y geoipupdate
-        elif command -v pacman &> /dev/null; then
-            echo "Installing via pacman..."
-            sudo pacman -S geoipupdate
-        else
-            echo -e "${RED}Please install geoipupdate manually:${NC}"
-            echo "  - Ubuntu/Debian: sudo apt install geoipupdate"
-            echo "  - RHEL/CentOS: sudo yum install geoipupdate"
-            echo "  - Arch: sudo pacman -S geoipupdate"
-            echo "  - Or download from: https://github.com/maxmind/geoipupdate/releases"
-            exit 1
-        fi
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        if command -v brew &> /dev/null; then
-            echo "Installing via Homebrew..."
-            brew install geoipupdate
-        else
-            echo -e "${RED}Please install Homebrew first, then run: brew install geoipupdate${NC}"
-            exit 1
-        fi
-    else
-        echo -e "${RED}Unsupported OS. Please install geoipupdate manually.${NC}"
-        exit 1
-    fi
-fi
-
-# Run geoipupdate
-echo -e "${GREEN}Downloading/Updating GeoLite2 databases...${NC}"
-echo ""
-
-geoipupdate -f "$CONFIG_FILE" -d "$DATA_DIR" -v
-
-echo ""
-echo -e "${GREEN}=== Update Complete ===${NC}"
-echo "Downloaded databases:"
-ls -lh "$DATA_DIR"/*.mmdb 2>/dev/null || echo "No MMDB files found"
-
-echo ""
-echo -e "${GREEN}Database info:${NC}"
-for db in "$DATA_DIR"/*.mmdb; do
-    if [[ -f "$db" ]]; then
-        filename=$(basename "$db")
-        size=$(du -h "$db" | cut -f1)
-        modified=$(stat -c %y "$db" 2>/dev/null || stat -f %Sm "$db" 2>/dev/null)
-        echo "  - $filename ($size) - Modified: $modified"
-    fi
+#!/usr/bin/env bash
+set -euo pipefail
+beon_project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+beon_geoip_config="${GEOIP_CONFIG_FILE:-${beon_project_root}/configs/GeoIP.conf}"
+beon_mmdb_dir="${MMDB_HOST_DIR:-${beon_project_root}/data/mmdb}"
+while (($#)); do
+  case "$1" in
+    --config) beon_geoip_config="${2:?missing config path}"; shift 2 ;;
+    --data-dir) beon_mmdb_dir="${2:?missing data directory}"; shift 2 ;;
+    --help) echo 'update-geoip.sh [--config /absolute/GeoIP.conf] [--data-dir /absolute/mmdb]'; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
 done
+[[ -r "$beon_geoip_config" ]] || { echo 'MaxMind configuration file is missing or unreadable' >&2; exit 1; }
+if grep -Eq 'YOUR_ACCOUNT_ID|YOUR_LICENSE_KEY' "$beon_geoip_config"; then
+  echo 'Replace MaxMind placeholders before updating' >&2; exit 1
+fi
+command -v geoipupdate >/dev/null || { echo 'Install geoipupdate on the VPS before running this script' >&2; exit 1; }
+mkdir -p "$beon_mmdb_dir"
+# -d overrides DatabaseDirectory in the credential file. Secrets are never
+# copied into the project, passed in arguments, or printed to logs.
+geoipupdate -f "$beon_geoip_config" -d "$beon_mmdb_dir"
+# Container UID 10001 needs read access to databases generated by the host job.
+for beon_geoip_database in GeoLite2-City.mmdb GeoLite2-ASN.mmdb; do
+  [[ -s "$beon_mmdb_dir/$beon_geoip_database" ]] || { echo "Missing $beon_geoip_database after update" >&2; exit 1; }
+  chmod 0644 "$beon_mmdb_dir/$beon_geoip_database"
+done
+echo "GeoLite2 databases updated in $beon_mmdb_dir"

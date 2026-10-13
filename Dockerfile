@@ -1,89 +1,59 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+# syntax=docker/dockerfile:1.7
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
-WORKDIR /app
+ARG VERSION=dev
+ARG BUILD_TIME=unknown
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+WORKDIR /src
+RUN apk add --no-cache ca-certificates git tzdata
 
-# Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source code
+RUN for attempt in 1 2 3; do \
+      go mod download && break; \
+      if [ "$attempt" = 3 ]; then exit 1; fi; \
+      sleep "$((attempt * 5))"; \
+    done
 COPY . .
 
-# Build API server
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+      -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
+      -o /out/api ./cmd/api && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+      -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+      -o /out/ingestor ./cmd/ingestor && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/compiler ./cmd/compiler && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/judge ./cmd/judge
 
-# Build Ingestor
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/ingestor ./cmd/ingestor
-
-# Build Compiler
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/compiler ./cmd/compiler
-
-# Build Judge
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/judge ./cmd/judge
-
-# Final stage - API
-FROM alpine:3.19 AS api
-
+FROM alpine:3.22 AS runtime
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -S -g 10001 beon && \
+    adduser -S -D -H -u 10001 -G beon beon && \
+    mkdir -p /app/configs /app/data/mmdb /app/logs && \
+    chown -R beon:beon /app
 WORKDIR /app
+COPY --from=builder --chown=beon:beon /src/configs /app/configs
+USER beon
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
-
-# Copy binary
-COPY --from=builder /bin/api /app/api
-COPY --from=builder /app/configs /app/configs
-
-# Create data directory
-RUN mkdir -p /app/data/mmdb /app/logs
-
+FROM runtime AS api
+COPY --from=builder --chown=beon:beon /out/api /app/api
 EXPOSE 8080
+ENTRYPOINT ["/app/api"]
+CMD ["-config", "/app/configs/config.yaml"]
 
-CMD ["/app/api", "-config", "/app/configs/config.yaml"]
+FROM runtime AS ingestor
+COPY --from=builder --chown=beon:beon /out/ingestor /app/ingestor
+ENTRYPOINT ["/app/ingestor"]
+CMD ["-config", "/app/configs/config.yaml", "-feeds", "/app/configs/feeds.yaml"]
 
-# Final stage - Ingestor
-FROM alpine:3.19 AS ingestor
+FROM runtime AS compiler
+COPY --from=builder --chown=beon:beon /out/compiler /app/compiler
+ENTRYPOINT ["/app/compiler"]
+CMD ["-config", "/app/configs/config.yaml"]
 
-WORKDIR /app
-
-RUN apk add --no-cache ca-certificates tzdata
-
-COPY --from=builder /bin/ingestor /app/ingestor
-COPY --from=builder /app/configs /app/configs
-
-RUN mkdir -p /app/data /app/logs
-
-CMD ["/app/ingestor", "-config", "/app/configs/config.yaml", "-feeds", "/app/configs/feeds.yaml"]
-
-# Final stage - Compiler
-FROM alpine:3.19 AS compiler
-
-WORKDIR /app
-
-RUN apk add --no-cache ca-certificates tzdata
-
-COPY --from=builder /bin/compiler /app/compiler
-COPY --from=builder /app/configs /app/configs
-
-RUN mkdir -p /app/data/mmdb /app/logs
-
-CMD ["/app/compiler", "-config", "/app/configs/config.yaml"]
-
-# Final stage - Judge
-FROM alpine:3.19 AS judge
-
-WORKDIR /app
-
-RUN apk add --no-cache ca-certificates tzdata
-
-COPY --from=builder /bin/judge /app/judge
-COPY --from=builder /app/configs /app/configs
-
-RUN mkdir -p /app/data/mmdb /app/logs
-
+FROM runtime AS judge
+COPY --from=builder --chown=beon:beon /out/judge /app/judge
 EXPOSE 8081
-
-CMD ["/app/judge", "-config", "/app/configs/config.yaml"]
+ENTRYPOINT ["/app/judge"]
+CMD ["-config", "/app/configs/config.yaml"]

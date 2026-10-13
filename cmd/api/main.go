@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/lfrfrfr/beon-ipquality/internal/api/middleware"
 	"github.com/lfrfrfr/beon-ipquality/internal/cache"
 	"github.com/lfrfrfr/beon-ipquality/internal/config"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	pkglogger "github.com/lfrfrfr/beon-ipquality/pkg/logger"
 )
@@ -36,7 +38,7 @@ func main() {
 	flag.Parse()
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadFromEnv(*configPath)
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
@@ -57,37 +59,49 @@ func main() {
 	if mmdbPath == "" {
 		mmdbPath = "./data/mmdb/reputation.mmdb"
 	}
+	handlers.SetMMDBConfig(handlers.MMDBConfig{
+		ReputationPath: mmdbPath,
+		MaxAge:         cfg.MMDB.MaxAge,
+		GeoIPCityPath:  cfg.MMDB.GeoLite2CityPath,
+		GeoIPASNPath:   cfg.MMDB.GeoLite2ASNPath,
+	})
 
 	mmdbReader, err := mmdb.NewReader(mmdbPath, cfg.MMDB.GeoLite2CityPath, cfg.MMDB.GeoLite2ASNPath)
 	if err != nil {
-		pkglogger.Warn(fmt.Sprintf("Failed to load MMDB: %v (API will return clean results)", err))
+		if cfg.Env == "production" {
+			pkglogger.Fatal(fmt.Sprintf("Failed to load required MMDB: %v", err))
+		}
+		pkglogger.Warn(fmt.Sprintf("Failed to load MMDB: %v (reputation endpoints will return 503)", err))
 	} else {
 		pkglogger.Info(fmt.Sprintf("Loaded MMDB from %s", mmdbPath))
 		handlers.SetMMDBReader(mmdbReader)
-		// Set MMDB config for hot reload
-		handlers.SetMMDBConfig(handlers.MMDBConfig{
-			ReputationPath: mmdbPath,
-			GeoIPCityPath:  cfg.MMDB.GeoLite2CityPath,
-			GeoIPASNPath:   cfg.MMDB.GeoLite2ASNPath,
-		})
-		defer mmdbReader.Close()
+		reloadCancel, reloadDone := startMMDBReload(mmdbReader, cfg)
+		defer func() {
+			reloadCancel()
+			<-reloadDone
+			_ = mmdbReader.Close()
+		}()
 	}
+
+	handlers.SetCacheTimeout(cfg.Redis.OperationTimeout)
 
 	// Initialize Redis cache (if enabled)
 	if cfg.Redis.Enabled {
 		redisCache, err := cache.NewRedisCache(cache.Config{
-			Host:     cfg.Redis.Host,
-			Port:     cfg.Redis.Port,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-			PoolSize: cfg.Redis.PoolSize,
-			TTL:      5 * time.Minute,
-			Prefix:   "ipq:",
+			URL:              cfg.Redis.URL,
+			OperationTimeout: cfg.Redis.OperationTimeout,
+			Host:             cfg.Redis.Host,
+			Port:             cfg.Redis.Port,
+			Password:         cfg.Redis.Password,
+			DB:               cfg.Redis.DB,
+			PoolSize:         cfg.Redis.PoolSize,
+			TTL:              5 * time.Minute,
+			Prefix:           "ipq:",
 		})
 		if err != nil {
 			pkglogger.Warn(fmt.Sprintf("Failed to connect to Redis: %v (caching disabled)", err))
 		} else {
-			pkglogger.Info(fmt.Sprintf("Connected to Redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port))
+			pkglogger.Info("Redis cache initialized")
 			handlers.SetCache(redisCache)
 			defer redisCache.Close()
 		}
@@ -96,14 +110,7 @@ func main() {
 	}
 
 	// Create Fiber app
-	app := fiber.New(fiber.Config{
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
-		IdleTimeout:  cfg.Server.IdleTimeout,
-		AppName:      "BEON-IPQuality API v" + version,
-		// Disable startup message in production
-		DisableStartupMessage: cfg.Env == "production",
-	})
+	app := fiber.New(serverConfig(cfg))
 
 	// Setup middleware
 	setupMiddleware(app, cfg)
@@ -137,6 +144,46 @@ func main() {
 	pkglogger.Info("Server exited gracefully")
 }
 
+func startMMDBReload(reader *mmdb.Reader, cfg *config.Config) (context.CancelFunc, <-chan struct{}) {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if cfg.MMDB.ReloadInterval <= 0 {
+			<-ctx.Done()
+			return
+		}
+		ticker := time.NewTicker(cfg.MMDB.ReloadInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				changed, err := reader.ReloadIfChanged(cfg.MMDB.ReputationPath, cfg.MMDB.GeoLite2CityPath, cfg.MMDB.GeoLite2ASNPath)
+				status := "unchanged"
+				if changed {
+					status = "changed"
+				}
+				if err != nil {
+					status = "error"
+					pkglogger.Error(fmt.Sprintf("Scheduled MMDB reload failed: %v", err))
+				}
+				internalmetrics.Reloads.WithLabelValues(status).Inc()
+				snapshot := reader.Snapshot(cfg.MMDB.MaxAge, time.Now())
+				internalmetrics.SnapshotBuiltAt.Set(float64(snapshot.BuiltAt.Unix()))
+				stale := 0.0
+				if snapshot.Stale {
+					stale = 1
+				}
+				internalmetrics.SnapshotStale.Set(stale)
+
+			}
+		}
+	}()
+	return cancel, done
+}
+
 func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Recovery middleware
 	app.Use(recover.New())
@@ -146,6 +193,9 @@ func setupMiddleware(app *fiber.App, cfg *config.Config) {
 		Format:     "[${time}] ${status} - ${method} ${path} (${latency})\n",
 		TimeFormat: "2006-01-02 15:04:05",
 	}))
+	if cfg.Metrics.Enabled {
+		app.Use(internalmetrics.HTTPMiddleware())
+	}
 
 	// CORS middleware
 	if cfg.API.CORS.Enabled {
@@ -153,28 +203,6 @@ func setupMiddleware(app *fiber.App, cfg *config.Config) {
 			AllowOrigins: joinStrings(cfg.API.CORS.AllowOrigins),
 			AllowMethods: joinStrings(cfg.API.CORS.AllowMethods),
 			AllowHeaders: joinStrings(cfg.API.CORS.AllowHeaders),
-		}))
-	}
-
-	// Rate limiter middleware
-	if cfg.API.RateLimit > 0 {
-		app.Use(limiter.New(limiter.Config{
-			Max:        cfg.API.RateLimit,
-			Expiration: cfg.API.RateLimitWindow,
-			KeyGenerator: func(c *fiber.Ctx) string {
-				// Use API key if available, otherwise use IP
-				apiKey := c.Get("X-API-Key")
-				if apiKey != "" {
-					return apiKey
-				}
-				return c.IP()
-			},
-			LimitReached: func(c *fiber.Ctx) error {
-				return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-					"error":   "rate_limit_exceeded",
-					"message": "Too many requests. Please try again later.",
-				})
-			},
 		}))
 	}
 }
@@ -186,14 +214,43 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	}
 
 	// Prometheus metrics endpoint (no auth required)
-	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+	if cfg.Metrics.Enabled {
+		app.Get(cfg.Metrics.Path, adaptor.HTTPHandler(promhttp.Handler()))
+	}
+
+	// Admin endpoints stay disabled until a separate key is configured.
+	adminAuth := middleware.AdminKeyAuth(cfg.API.AdminKey)
+	app.Get("/api/v1/cache/stats", adminAuth, handlers.GetCacheStats())
+	app.Delete("/api/v1/cache", adminAuth, handlers.ClearCache())
+	app.Post("/api/v1/reload", adminAuth, handlers.ReloadMMDB())
 
 	// API v1 routes
 	v1 := app.Group("/api/v1")
 
 	// Apply API key authentication if enabled
 	if cfg.API.AuthEnabled {
-		v1.Use(middleware.APIKeyAuth())
+		v1.Use(middleware.APIKeyAuth(cfg.API.APIKey))
+	}
+
+	// Rate limiter middleware
+	if cfg.API.RateLimit > 0 {
+		v1.Use(limiter.New(limiter.Config{
+			Max:        cfg.API.RateLimit,
+			Expiration: cfg.API.RateLimitWindow,
+			KeyGenerator: func(c *fiber.Ctx) string {
+				if cfg.API.AuthEnabled {
+					return fmt.Sprintf("key:%x", sha256.Sum256([]byte(c.Get("X-API-Key"))))
+				}
+				return "ip:" + c.IP()
+			},
+			LimitReached: func(c *fiber.Ctx) error {
+				internalmetrics.APIRateLimitHits.Inc()
+				return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+					"error":   "rate_limit_exceeded",
+					"message": "Too many requests. Please try again later.",
+				})
+			},
+		}))
 	}
 
 	// IP check endpoints
@@ -205,13 +262,6 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 
 	// Stats endpoint
 	v1.Get("/stats", handlers.GetStats())
-
-	// Cache endpoints
-	v1.Get("/cache/stats", handlers.GetCacheStats())
-	v1.Delete("/cache", handlers.ClearCache())
-
-	// Hot reload endpoint (for admin use)
-	v1.Post("/reload", handlers.ReloadMMDB())
 
 	// 404 handler
 	app.Use(func(c *fiber.Ctx) error {
@@ -231,4 +281,14 @@ func joinStrings(s []string) string {
 		result += str
 	}
 	return result
+}
+
+func serverConfig(cfg *config.Config) fiber.Config {
+	return fiber.Config{
+		ReadTimeout: cfg.Server.ReadTimeout, WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout: cfg.Server.IdleTimeout, AppName: "BEON-IPQuality API v" + version,
+		DisableStartupMessage: cfg.Env == "production",
+		ProxyHeader:           "X-Real-IP", EnableTrustedProxyCheck: true,
+		TrustedProxies: cfg.Server.TrustedProxies, EnableIPValidation: true,
+	}
 }

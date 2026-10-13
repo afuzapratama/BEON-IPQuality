@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'fix/**']
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Build all services
+        run: go build ./cmd/...
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: integration-only
+          POSTGRES_DB: beon_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d beon_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fixture pipeline with PostgreSQL and Redis
+        env:
+          BEON_INTEGRATION_DATABASE_URL: postgresql://postgres:integration-only@127.0.0.1:5432/beon_test?sslmode=disable
+          BEON_INTEGRATION_REDIS_URL: redis://127.0.0.1:6379
+        run: go test -race -count=1 ./tests/integration
+
+  operations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Backup retention, integrity and notification guards
+        run: python -m unittest discover -s tests/operations -v
+      - name: Scoring evaluation and label review guards
+        run: |
+          pip install PyYAML==6.0.3
+          python -m unittest discover -s tests/scoring -v
+      - name: Validate OpenAPI contract
+        run: |
+          pip install openapi-spec-validator==0.9.0
+          python -m openapi_spec_validator docs/openapi.yaml
+      - name: Nginx HTTPS configuration syntax
+        run: ./tests/ops/test-nginx.sh
+      - name: GeoIP paths with fixture executable
+        run: ./tests/ops/test-geoip.sh
+      - name: Build fixture service images
+        run: |
+          for service in api compiler ingestor judge; do
+            docker buildx build --target "$service" --load -t "beon-phase3-$service:local" .
+          done
+      - name: Production bootstrap, migrations, backup and isolated restore
+        run: ./tests/ops/test-production.sh

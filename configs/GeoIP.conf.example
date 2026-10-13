@@ -11,7 +11,7 @@ LicenseKey YOUR_LICENSE_KEY
 # GeoLite2-ASN: ASN/Organization lookup
 # GeoLite2-City: City-level geolocation
 # GeoLite2-Country: Country-level geolocation (smaller, faster)
-EditionIDs GeoLite2-ASN GeoLite2-City GeoLite2-Country
+EditionIDs GeoLite2-ASN GeoLite2-City
 
 # DatabaseDirectory - where to store the downloaded databases
 # For development: ./data/mmdb (relative to project root)
@@ -31,4 +31,4 @@ DatabaseDirectory /opt/beon-ipquality/data/mmdb
 PreserveFileTimes 0
 
 # LockFile - prevent concurrent updates (optional)
-LockFile /tmp/geoipupdate.lock
+# LockFile defaults to DatabaseDirectory/.geoipupdate.lock

@@ -1,0 +1,16 @@
+[Unit]
+Description=BEON API, freshness, backup and host checks with Telegram alerts
+After=docker.service network-online.target
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/beon-ipquality/operations.env
+ExecStart=/usr/bin/python3 /opt/beon-ipquality/scripts/operations.py monitor
+StateDirectory=beon-ipquality
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=128M
+TimeoutStartSec=90

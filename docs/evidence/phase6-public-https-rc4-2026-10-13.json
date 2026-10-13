@@ -1,0 +1,21 @@
+{
+  "duration_seconds": 300.09417442899576,
+  "target_rate": 5,
+  "requests": 1500,
+  "varied_ip_cohort": 2005,
+  "statuses": {
+    "200": 1500
+  },
+  "invalid_or_failed": 0,
+  "scope": "Client outside VPS, public TLS, rate bounded below key quota; stability probe, not throughput ceiling",
+  "single": {
+    "p50_ms": 297.429395999643,
+    "p95_ms": 310.675025000819,
+    "p99_ms": 316.2498189994949
+  },
+  "batch4": {
+    "p50_ms": 297.20287199597806,
+    "p95_ms": 311.0421439996571,
+    "p99_ms": 318.77040000108536
+  }
+}

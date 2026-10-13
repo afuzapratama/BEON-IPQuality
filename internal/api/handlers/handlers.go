@@ -2,23 +2,30 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/lfrfrfr/beon-ipquality/internal/cache"
+	internalmetrics "github.com/lfrfrfr/beon-ipquality/internal/metrics"
 	"github.com/lfrfrfr/beon-ipquality/internal/mmdb"
 	"github.com/lfrfrfr/beon-ipquality/pkg/iputil"
 	"github.com/lfrfrfr/beon-ipquality/pkg/models"
 )
 
+var cacheRetryAt atomic.Int64
+
+var ErrReputationUnavailable = errors.New("reputation database unavailable")
+
 var (
-	mmdbReader *mmdb.Reader
-	mmdbMu     sync.RWMutex
-	ipCache    cache.Cache
-	cacheMu    sync.RWMutex
-	cacheCtx   = context.Background()
+	mmdbReader   *mmdb.Reader
+	mmdbMu       sync.RWMutex
+	ipCache      cache.Cache
+	cacheMu      sync.RWMutex
+	cacheTimeout = 50 * time.Millisecond
 )
 
 // SetMMDBReader sets the MMDB reader for IP lookups
@@ -40,6 +47,7 @@ func SetCache(c cache.Cache) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	ipCache = c
+	cacheRetryAt.Store(0)
 }
 
 // getCache returns the current cache instance
@@ -47,6 +55,11 @@ func getCache() cache.Cache {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
 	return ipCache
+}
+
+// GetConfiguredCache exposes the configured cache to service lifecycle code.
+func GetConfiguredCache() cache.Cache {
+	return getCache()
 }
 
 // CheckIP handles single IP reputation check
@@ -82,9 +95,13 @@ func CheckIP() fiber.Handler {
 			})
 		}
 
-		// TODO: Implement actual reputation lookup from MMDB/database
-		// For now, return a placeholder response
-		result := performIPCheck(addr, startTime)
+		result, err := performIPCheck(addr, startTime)
+		if err != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"error":   "reputation_unavailable",
+				"message": "Reputation data is temporarily unavailable",
+			})
+		}
 
 		return c.JSON(result)
 	}
@@ -144,7 +161,13 @@ func BatchCheckIP(maxSize int) fiber.Handler {
 				continue
 			}
 
-			result := performIPCheck(addr, ipStartTime)
+			result, err := performIPCheck(addr, ipStartTime)
+			if err != nil {
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+					"error":   "reputation_unavailable",
+					"message": "Reputation data is temporarily unavailable",
+				})
+			}
 			results = append(results, result)
 		}
 
@@ -159,13 +182,13 @@ func BatchCheckIP(maxSize int) fiber.Handler {
 // GetStats returns API usage statistics
 func GetStats() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// TODO: Implement actual stats from ClickHouse or Redis
+		snapshot := internalmetrics.Stats()
 		stats := models.APIStats{
-			TotalRequests:   0,
-			TotalIPs:        0,
-			AvgResponseTime: 0,
-			ErrorRate:       0,
-			Period:          "24h",
+			TotalRequests:   snapshot.TotalRequests,
+			TotalIPs:        snapshot.TotalIPs,
+			AvgResponseTime: snapshot.AvgResponseTime,
+			ErrorRate:       snapshot.ErrorRate,
+			Period:          "process_lifetime",
 		}
 
 		return c.JSON(stats)
@@ -177,78 +200,99 @@ func HealthCheck(version string) fiber.Handler {
 	startTime := time.Now()
 
 	return func(c *fiber.Ctx) error {
+		reader := getMMDBReader()
+		statusCode := fiber.StatusOK
+		statusText := "healthy"
+		mmdbStatus := "healthy"
+		var snapshot *mmdb.SnapshotStatus
+		if reader != nil && reader.IsReady() {
+			value := reader.Snapshot(getMMDBConfig().MaxAge, time.Now())
+			snapshot = &value
+			internalmetrics.SnapshotBuiltAt.Set(float64(value.BuiltAt.Unix()))
+			stale := 0.0
+			if value.Stale {
+				stale = 1
+			}
+			internalmetrics.SnapshotStale.Set(stale)
+		}
+		if reader == nil || !reader.IsReady() {
+			statusCode = fiber.StatusServiceUnavailable
+			statusText = "unhealthy"
+			mmdbStatus = "unavailable"
+		}
+
+		if snapshot != nil && snapshot.Stale {
+			statusCode = fiber.StatusServiceUnavailable
+			statusText = "unhealthy"
+			mmdbStatus = "stale"
+		}
+
 		status := models.HealthStatus{
-			Status:    "healthy",
+			Status:    statusText,
 			Version:   version,
 			Uptime:    time.Since(startTime).String(),
 			Timestamp: time.Now(),
 			Services: map[string]string{
-				"api":      "healthy",
-				"database": "unknown", // TODO: Check database connection
-				"mmdb":     "unknown", // TODO: Check MMDB file
+				"api":  "healthy",
+				"mmdb": mmdbStatus,
 			},
 		}
 
-		return c.JSON(status)
+		return c.Status(statusCode).JSON(fiber.Map{"status": status.Status, "version": status.Version, "uptime": status.Uptime, "timestamp": status.Timestamp, "services": status.Services, "snapshot": snapshot})
 	}
 }
 
 // performIPCheck performs the actual IP reputation check using MMDB with caching
-func performIPCheck(addr netip.Addr, startTime time.Time) models.IPCheckResult {
+func performIPCheck(addr netip.Addr, startTime time.Time) (models.IPCheckResult, error) {
 	ipStr := addr.String()
 
-	// Try cache first
-	if c := getCache(); c != nil {
-		if cached, err := c.Get(cacheCtx, ipStr); err == nil && cached != nil {
-			cached.QueryTime = float64(time.Since(startTime).Microseconds()) / 1000.0
-			cached.Cached = true
-			return *cached
-		}
-	}
-
 	reader := getMMDBReader()
-
-	// If MMDB is loaded, use it for lookup
-	if reader != nil {
-		result, err := reader.LookupAll(addr)
-		if err == nil && result != nil {
-			result.QueryTime = float64(time.Since(startTime).Microseconds()) / 1000.0
-			result.Cached = false
-
-			// Store in cache
-			if c := getCache(); c != nil {
-				_ = c.Set(cacheCtx, ipStr, result)
-			}
-
-			return *result
+	if reader == nil || !reader.IsReady() {
+		return models.IPCheckResult{}, ErrReputationUnavailable
+	}
+	snapshot := reader.Snapshot(getMMDBConfig().MaxAge, time.Now())
+	if snapshot.Stale {
+		return models.IPCheckResult{}, ErrReputationUnavailable
+	}
+	// A cached response belongs to the exact reputation/GeoIP/ASN generation.
+	if cache := getCache(); cache != nil && time.Now().UnixNano() >= cacheRetryAt.Load() {
+		ctx, cancel := cacheContext()
+		cached, err := cache.Get(ctx, snapshot.Version+":"+ipStr)
+		cancel()
+		if err != nil {
+			cacheRetryAt.Store(time.Now().Add(time.Second).UnixNano())
+			internalmetrics.CacheHits.WithLabelValues("get", "error").Inc()
+		}
+		if err == nil && cached != nil && cached.DataVersion == snapshot.Version && reader.Version() == snapshot.Version && reader.IsReady() && !reader.Snapshot(getMMDBConfig().MaxAge, time.Now()).Stale {
+			cached.QueryTime = float64(time.Since(startTime).Microseconds()) / 1000
+			cached.Cached = true
+			internalmetrics.RecordIPCheck(cached.RiskLevel, true, cached.QueryTime, "cache")
+			return *cached, nil
 		}
 	}
 
-	// Fallback: return clean result if MMDB not available or IP not found
-	result := models.IPCheckResult{
-		IP:           addr.String(),
-		Score:        0,
-		RiskScore:    0,
-		RiskLevel:    "clean",
-		IsProxy:      false,
-		IsVPN:        false,
-		IsTor:        false,
-		IsDatacenter: false,
-		IsBotnet:     false,
-		IsSpam:       false,
-		Threats:      []models.Threat{},
-		Geo:          nil,
-		ASN:          nil,
-		QueryTime:    float64(time.Since(startTime).Microseconds()) / 1000.0,
-		Cached:       false,
+	result, err := reader.LookupAllFresh(addr, getMMDBConfig().MaxAge, time.Now())
+	if err != nil || result == nil {
+		return models.IPCheckResult{}, ErrReputationUnavailable
+	}
+	result.QueryTime = float64(time.Since(startTime).Microseconds()) / 1000.0
+	result.Cached = false
+	internalmetrics.RecordIPCheck(result.RiskLevel, false, result.QueryTime, "mmdb")
+	internalmetrics.RiskScoreDistribution.Observe(float64(result.Score))
+	for _, threatType := range result.ThreatTypes {
+		internalmetrics.RecordThreatDetection(threatType)
 	}
 
-	// Cache clean results too (shorter TTL would be better for these)
-	if c := getCache(); c != nil {
-		_ = c.Set(cacheCtx, ipStr, &result)
+	if c := getCache(); c != nil && time.Now().UnixNano() >= cacheRetryAt.Load() {
+		ctx, cancel := cacheContext()
+		if err := c.Set(ctx, result.DataVersion+":"+ipStr, result); err != nil {
+			cacheRetryAt.Store(time.Now().Add(time.Second).UnixNano())
+			internalmetrics.CacheHits.WithLabelValues("set", "error").Inc()
+		}
+		cancel()
 	}
 
-	return result
+	return *result, nil
 }
 
 // GetCacheStats returns cache statistics
@@ -262,7 +306,9 @@ func GetCacheStats() fiber.Handler {
 			})
 		}
 
-		stats, err := cache.Stats(cacheCtx)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		stats, err := cache.Stats(ctx)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "Failed to get cache stats",
@@ -287,7 +333,9 @@ func ClearCache() fiber.Handler {
 			})
 		}
 
-		if err := cache.Clear(cacheCtx); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cache.Clear(ctx); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "Failed to clear cache",
 			})
@@ -302,60 +350,93 @@ func ClearCache() fiber.Handler {
 
 // MMDBConfig holds MMDB paths for reload
 type MMDBConfig struct {
+	MaxAge         time.Duration
 	ReputationPath string
 	GeoIPCityPath  string
 	GeoIPASNPath   string
 }
 
 var mmdbConfig MMDBConfig
+var mmdbConfigMu sync.RWMutex
 
 // SetMMDBConfig sets the MMDB configuration for hot reload
 func SetMMDBConfig(cfg MMDBConfig) {
+	mmdbConfigMu.Lock()
+	defer mmdbConfigMu.Unlock()
 	mmdbConfig = cfg
 }
 
 // ReloadMMDB reloads the MMDB database without restart
 func ReloadMMDB() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Clear cache first
-		if cache := getCache(); cache != nil {
-			_ = cache.Clear(cacheCtx)
-		}
-
-		// Try to reload MMDB
-		if mmdbConfig.ReputationPath == "" {
+		cfg := getMMDBConfig()
+		// Validate reload configuration before changing live state.
+		if cfg.ReputationPath == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"success": false,
 				"error":   "MMDB config not set",
 			})
 		}
 
-		newReader, err := mmdb.NewReader(
-			mmdbConfig.ReputationPath,
-			mmdbConfig.GeoIPCityPath,
-			mmdbConfig.GeoIPASNPath,
-		)
+		reader := getMMDBReader()
+		var err error
+		changed := true
+		if reader == nil {
+			reader, err = mmdb.NewReader(
+				cfg.ReputationPath,
+				cfg.GeoIPCityPath,
+				cfg.GeoIPASNPath,
+			)
+			if err == nil {
+				SetMMDBReader(reader)
+			}
+		} else {
+			changed, err = reader.ReloadIfChanged(
+				cfg.ReputationPath,
+				cfg.GeoIPCityPath,
+				cfg.GeoIPASNPath,
+			)
+		}
 		if err != nil {
+			internalmetrics.Reloads.WithLabelValues("error").Inc()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"success": false,
 				"error":   "Failed to reload MMDB: " + err.Error(),
 			})
 		}
 
-		// Swap readers
-		mmdbMu.Lock()
-		oldReader := mmdbReader
-		mmdbReader = newReader
-		mmdbMu.Unlock()
-
-		// Close old reader
-		if oldReader != nil {
-			oldReader.Close()
+		status := "unchanged"
+		if changed {
+			status = "changed"
 		}
+		internalmetrics.Reloads.WithLabelValues(status).Inc()
 
 		return c.JSON(fiber.Map{
-			"success": true,
-			"message": "MMDB reloaded successfully, cache cleared",
+			"success":      true,
+			"message":      "MMDB reload checked; cache follows snapshot version",
+			"changed":      changed,
+			"data_version": reader.Version(),
 		})
 	}
+}
+
+func getMMDBConfig() MMDBConfig {
+	mmdbConfigMu.RLock()
+	defer mmdbConfigMu.RUnlock()
+	return mmdbConfig
+}
+
+func SetCacheTimeout(timeout time.Duration) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if timeout > 0 {
+		cacheTimeout = timeout
+	}
+}
+
+func cacheContext() (context.Context, context.CancelFunc) {
+	cacheMu.RLock()
+	timeout := cacheTimeout
+	cacheMu.RUnlock()
+	return context.WithTimeout(context.Background(), timeout)
 }

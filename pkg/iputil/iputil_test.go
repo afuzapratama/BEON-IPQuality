@@ -151,6 +151,8 @@ func TestParseIPPort(t *testing.T) {
 	}{
 		{"Valid IP:Port", "192.168.1.1:8080", "192.168.1.1", 8080, false},
 		{"Valid IP:Port 443", "10.0.0.1:443", "10.0.0.1", 443, false},
+		{"IPv6 with brackets", "[::1]:8080", "::1", 8080, false},
+		{"IPv6 public with brackets", "[2001:db8::1]:3128", "2001:db8::1", 3128, false},
 		{"No port", "192.168.1.1", "", 0, true},
 		{"Invalid port", "192.168.1.1:99999", "", 0, true},
 	}
