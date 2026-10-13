@@ -15,7 +15,7 @@ NVMe Azure 220 GB hanya untuk staging sementara; data utama tetap persisten.
 | Komponen | Status |
 |---|---|
 | API dan halaman lookup | HTTPS aktif; lookup memerlukan API key |
-| Dataset | 20 grup / 32 sumber; GreenSnow dikarantina karena upstream 503, termasuk akun Avastel privat |
+| Dataset | 21 grup / 33 sumber, termasuk GreenSnow dan akun Avastel privat |
 | Scoring | `evidence-family-max-v1`, threshold risky 50 |
 | Monitoring | Prometheus internal + Grafana dengan login di `/grafana/`; Glances melalui SSH |
 | Alert | Telegram setiap menit + uptime eksternal GitHub sekitar lima menit |
