@@ -40,9 +40,12 @@ if __name__=='__main__':unittest.main()
 
 class WorkerLifecycleTest(unittest.TestCase):
  def test_timeout_stops_owned_container(self):
-  with patch.object(sync,'compose',side_effect=subprocess.TimeoutExpired('compose',1800)) as compose,patch.object(sync.subprocess,'run') as cleanup:
+  with patch.object(sync,'compose',side_effect=[subprocess.TimeoutExpired('compose',1800),None]) as compose,patch.object(sync.subprocess,'check_output',return_value=b'{"beon":{"IPAddress":"172.18.0.99"}}'),patch.object(sync.subprocess,'run') as cleanup:
    with self.assertRaises(subprocess.TimeoutExpired):
     sync.worker('ingestor','-once',timeout=1800)
-   name=compose.call_args.args[3]
+   name=compose.call_args_list[0].args[3]
    self.assertTrue(name.startswith('beon-avastel-ingestor-'))
    self.assertEqual(cleanup.call_args.args[0],['docker','rm','-f',name])
+   sql=compose.call_args_list[1].args[-1]
+   self.assertIn("client_addr IN ('172.18.0.99'::inet)",sql)
+   self.assertIn('pg_terminate_backend',sql)

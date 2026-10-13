@@ -8,14 +8,14 @@ kedaluwarsa menghasilkan HTTP 503.
 ## Produksi
 
 Base URL: **https://ipproxy.beon-api.site**. Runtime memakai image digest
-[`v1.1.0-rc.6`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.6),
+[`v1.1.0-rc.7`](https://github.com/afuzapratama/BEON-IPQuality/releases/tag/v1.1.0-rc.7),
 source aplikasi dan konfigurasi host dikelola di `main`. VPS ARM64: 4 vCPU, RAM 8 GB, disk persisten 30 GB.
 NVMe Azure 220 GB hanya untuk staging sementara; data utama tetap persisten.
 
 | Komponen | Status |
 |---|---|
 | API dan halaman lookup | HTTPS aktif; lookup memerlukan API key |
-| Dataset | 21 grup / 33 sumber, termasuk akun Avastel privat |
+| Dataset | 20 grup / 32 sumber; GreenSnow dikarantina karena upstream 503, termasuk akun Avastel privat |
 | Scoring | `evidence-family-max-v1`, threshold risky 50 |
 | Monitoring | Prometheus internal + Grafana dengan login di `/grafana/`; Glances melalui SSH |
 | Alert | Telegram setiap menit + uptime eksternal GitHub sekitar lima menit |
@@ -126,7 +126,7 @@ proxy, GeoIP dan validasi monitoring. Profil development opsional dijelaskan di
 
 ## Release dan pekerjaan tersisa
 
-`main` adalah branch source aktif; **release produksi tetap `v1.1.0-rc.6`**.
+`main` adalah branch source aktif; **release produksi tetap `v1.1.0-rc.7`**.
 Workflow release memberi label pre-release pada tag yang mengandung suffix seperti
 `-rc.4`. Merge source tidak mengganti tag atau image yang berjalan di VPS.
 
@@ -143,7 +143,7 @@ Tidak ada bobot scoring yang dituning tanpa bukti. Lihat [review label](docs/LAB
 [status phase 6](docs/PHASE_6_SCORING_BACKUP_CAPACITY.md) dan
 [bukti operasional](docs/OPERATIONS_RC4_VALIDATION.md).
 Stable berikutnya direncanakan sebagai `v1.1.0` setelah scope/gate release ditutup;
-release lama `v1.0.0` tidak mencerminkan deployment rc.6 saat ini.
+release lama `v1.0.0` tidak mencerminkan deployment rc.7 saat ini.
 
 ## Lisensi
 

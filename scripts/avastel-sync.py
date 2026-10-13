@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import http.server
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -30,8 +31,24 @@ def worker(service, *args, timeout):
         compose('run','--rm','--name',name,'--no-deps',service,*args,timeout=timeout)
     except subprocess.TimeoutExpired:
         # Killing the CLI does not stop its container or PostgreSQL transaction.
-        subprocess.run(['docker','rm','-f',name],check=False,timeout=30,
-                       stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            networks = json.loads(subprocess.check_output(
+                ['docker','inspect','--format','{{json .NetworkSettings.Networks}}',name],
+                timeout=10,stderr=subprocess.DEVNULL))
+            addresses = [str(ipaddress.ip_address(n['IPAddress'])) for n in networks.values() if n.get('IPAddress')]
+            if addresses:
+                # Container removal alone may leave a server query running until completion.
+                # Cancel only connections from this still-owned container's private addresses.
+                literals = ','.join("'" + address + "'::inet" for address in addresses)
+                sql = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE backend_type='client backend' AND client_addr IN (" + literals + ") AND pid <> pg_backend_pid();"
+                compose('exec','-T','postgres','sh','-c',
+                        'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "$1"',
+                        'psql',sql,timeout=30)
+        except (subprocess.SubprocessError,ValueError,KeyError):
+            pass
+        finally:
+            subprocess.run(['docker','rm','-f',name],check=False,timeout=30,
+                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         raise
 
 

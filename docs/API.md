@@ -64,7 +64,7 @@ Mayoritas error aplikasi berbentuk `{"error":"code","message":"detail"}`. Error 
 
 ## Dataset akun privat dan waktu pembaruan
 
-Runtime VPS saat ini rc.6, source akun Avastel aktif pada API berkey. Snapshot
+Runtime VPS saat ini rc.7, source akun Avastel aktif pada API berkey. Snapshot
 reputasi tetap lokal; API lookup tidak memanggil Avastel per request. Publisher
 memperbarui dataset setiap 7 jam dan sesudah boot untuk recovery. Hanya row
 isProxy=True masuk source proxy; metadata ASN/GeoIP tetap dari pipeline yang

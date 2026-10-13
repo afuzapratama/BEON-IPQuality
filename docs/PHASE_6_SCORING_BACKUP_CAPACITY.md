@@ -401,3 +401,5 @@ budget keseluruhan 60 menit. Freshness budget tetap sama.
 GreenSnow sedang HTTP 503 dan dikarantina dari profil ARM produksi: sinyalnya tidak
 ikut compile, bukan dianggap fresh. Aktifkan kembali setelah upstream sehat dan
 refresh sukses. Jangan memakai retry manual saja sebagai bukti stabilitas 24–48 jam.
+
+PostgreSQL pada VPS 8 GB masih memakai cap pilot 512 MiB; cap dinaikkan ke 1.536 MiB tanpa restart DB untuk memberi headroom cache pada update massal. Worker timeout juga menghentikan koneksi PostgreSQL yang berasal dari IP container miliknya sebelum container dihapus; close Docker CLI/container saja tidak menjamin query server berhenti. Runtime rc.7 dan host support revision dipantau terpisah.
