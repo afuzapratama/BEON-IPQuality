@@ -33,7 +33,7 @@ menyimpan key. API key klien dan admin key berbeda; keduanya dikirim melalui hea
 | Method | Path | Akses | Fungsi |
 |---|---|---|---|
 | GET | `/` | Publik | Halaman lookup |
-| GET | `/health` | Publik | Kesiapan API dan freshness dataset; 503 bila belum siap |
+| GET | `/health` | Publik | Halaman status di browser; JSON untuk monitoring (`?format=json`), 503 JSON bila belum siap |
 | GET | `/api/v1/check/:ip` | API key | Lookup IP publik |
 | POST | `/api/v1/check/batch` | API key | Lookup batch; maksimal 100 IP pada produksi saat ini |
 | GET | `/api/v1/stats` | API key | Statistik sejak proses API dimulai |
