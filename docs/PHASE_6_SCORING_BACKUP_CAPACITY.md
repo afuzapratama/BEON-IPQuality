@@ -416,3 +416,9 @@ Validasi akhir rc.8: API HTTPS 200/fresh, updater systemd exit 0 (142,367 detik 
 ### GreenSnow dipulihkan — 2026-10-14
 
 Endpoint resmi tetap `https://blocklist.greensnow.co/greensnow.txt`. Pemeriksaan lokal dan VPS, termasuk User-Agent ingestor, kembali HTTP 200 dengan IP valid. Profil ARM mengaktifkan kembali GreenSnow pada jadwal `@hourly`. Ingestor yang ada sudah melakukan retry terbatas dan melanjutkan sumber lain setelah kegagalan. Respons non-200, body kosong, atau parse gagal tidak mengganti snapshot maupun memperbarui last-success. Siklus berikutnya mencoba lagi; data lama tetap mengikuti expiry dan freshness budget asli. Error tetap dicatat dan dipantau, tidak dianggap sukses untuk menyembunyikan data stale. Bukti karantina rc.8 di atas merupakan riwayat insiden, bukan konfigurasi aktif setelah pemulihan ini.
+
+### Pembersihan disk — 2026-10-15
+
+Root VPS mencapai 86% (25/29 GiB). Penyebab utama adalah volume PostgreSQL anonim dari uji restore backup: container dibuang dengan `docker rm -f`, namun volume sementara tertinggal. Sebanyak 15 volume PG17 anonim yang tidak dirujuk container dibersihkan; root turun ke 42%, ruang kosong sekitar 17 GiB sebelum pengujian ulang. Database produksi (~3,2 GiB), monitoring, backup lokal/offsite dan image aktif dipertahankan. Cleanup restore kini memakai `docker rm -fv` hanya pada container uji miliknya, dan integrasi operasi memeriksa daftar volume sebelum/sesudah restore. Tidak menggunakan global volume prune atau memindahkan data unik ke NVMe ephemeral.
+
+Alert freshness juga dipicu beberapa fetch harian yang sukses menyimpan data tetapi pencatatan riwayat timeout (deadline 5 detik). Dilakukan refresh sumber terkait dan compile/reload tanpa mengendurkan freshness. Ini berbeda dari kebocoran disk; perlu tindak lanjut ketahanan history saat cron harian bersamaan. Lokal project ~192 MiB dan recovery bundle ~670 MiB; tidak membutuhkan penghapusan untuk mengatasi alert VPS.

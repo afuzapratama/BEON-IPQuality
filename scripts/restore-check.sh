@@ -8,7 +8,7 @@ beon_restore_root="$(mktemp -d)"
 beon_restore_files="$beon_restore_root/mmdb"
 mkdir -p "$beon_restore_files"
 beon_restore_container="beon-restore-check-$$-${RANDOM}"
-trap 'docker rm -f "$beon_restore_container" >/dev/null 2>&1 || true; rm -rf "$beon_restore_root"' EXIT
+trap 'docker rm -fv "$beon_restore_container" >/dev/null 2>&1 || true; rm -rf "$beon_restore_root"' EXIT
 beon_compiler_image="$(sed -n 's/^COMPILER_IMAGE=//p' "$beon_backup/deployment-lock.env")"
 [[ -n "$beon_compiler_image" ]] || { echo 'Backup has no compiler image reference' >&2; exit 1; }
 tar -xzf "$beon_backup/mmdb.tar.gz" -C "$beon_restore_files" --no-same-owner

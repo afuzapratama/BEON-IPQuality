@@ -100,5 +100,9 @@ if beon_compose run --rm migrate >/dev/null 2>&1; then echo 'Changed migration c
 cp "$beon_test_dir/original.sql" "$beon_test_dir/project/migrations/002_source_expiry.sql"
 BACKUP_DIR="$beon_test_dir/backups" "$beon_test_root/scripts/backup.sh"
 beon_backup="$(find "$beon_test_dir/backups" -mindepth 1 -maxdepth 1 -type d)"
+# Restore checks must not leave anonymous PostgreSQL volumes behind.
+docker volume ls -q | sort > "$beon_test_dir/volumes-before-restore"
 "$beon_test_root/scripts/restore-check.sh" "$beon_backup"
+docker volume ls -q | sort > "$beon_test_dir/volumes-after-restore"
+diff "$beon_test_dir/volumes-before-restore" "$beon_test_dir/volumes-after-restore"
 echo 'Production Compose bootstrap, migration rerun/checksum rejection, backup and isolated restore passed.'
