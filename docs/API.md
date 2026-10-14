@@ -79,3 +79,9 @@ dapat menaikkan skor. Uji 100 record teringest adalah integration, bukan holdout
 ## Kebijakan akses produksi — 13 Oktober 2026
 
 Route lookup/stats aktif melalui HTTPS dengan API key, cache/reload dengan admin key. `/metrics` kini internal: HTTPS publik mengembalikan 403, sedangkan Prometheus mengambil langsung `api:8080/metrics`. Grafana ada di `/grafana/` dengan login operator. `/health` tetap publik untuk readiness dan uptime eksternal. Tabel di README menjadi ringkasan akses produksi terbaru; catatan akses metrics publik sebelumnya adalah kondisi historis.
+
+### Halaman status produksi
+
+Pada reverse proxy Caddy produksi, `GET /health` dengan `Accept: text/html` menampilkan halaman status ringan tanpa dependensi eksternal. Halaman mengambil `/health?format=json` setiap 30 detik, menampilkan komponen yang dilaporkan API, uptime proses, versi, snapshot, dan freshness tiap sumber dalam WIB. Pencarian dan filter membantu menemukan source stale atau fetch gagal. `Accept: application/json`, request tanpa Accept HTML, dan `?format=json` tetap mendapat kontrak JSON asli beserta HTTP 200/503. Shell HTML memakai HTTP 200; kondisi sebenarnya ditampilkan dari respons JSON. Halaman tidak mengukur availability historis atau menjamin status container yang tidak dilaporkan health API. Grafana tetap memerlukan login.
+
+Sumber tampilan: `web/health.html`, di-embed dengan `python3 scripts/render-health-page.py` sebagai respons inline pada `configs/caddy/beon-production.caddyfile` untuk deployment tanpa mount atau paket tambahan. Nginx dan akses API langsung tetap memakai JSON.
